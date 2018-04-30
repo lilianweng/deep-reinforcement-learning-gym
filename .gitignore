@@ -1,0 +1,9 @@
+.DS_Store
+.idea
+.pytest_cache
+checkpoints/*
+logs/*
+figs/*
+**/*.png
+**/*.pyc
+**/*.egg-info
