@@ -32,9 +32,15 @@ class ReinforcePolicy(Policy, BaseTFModelMixin):
     def act(self, state, **kwargs):
         # Stochastic policy
         with self.sess.as_default():
-            action_proba = self.pi_softmax.eval({self.states: [state]})[0]
+            action_proba = self.pi_proba.eval({self.states: [state]})[0]
 
         return np.random.choice(self.act_size, p=action_proba)
+
+    def _scope_vars(self, scope):
+        vars = tf.get_collection(tf.GraphKeys.GLOBAL_VARIABLES, scope=scope)
+        assert len(vars) > 0
+        print("Variables in scope '%s'" % scope, vars)
+        return vars
 
     @property
     def act_size(self):
@@ -56,27 +62,49 @@ class ReinforcePolicy(Policy, BaseTFModelMixin):
         self.returns = tf.placeholder(tf.float32, shape=(None,), name='return')
 
         # Build network
-        self.pi = mlp(self.states, self.layer_sizes + [self.act_size], name='pi')
-        self.pi_softmax = tf.nn.softmax(self.pi)
-        # self.v = mlp(self.states, self.layer_sizes + [1], name='v')  # This is the baseline.
+        self.pi = mlp(self.states, self.layer_sizes + [self.act_size], name='pi_network')
+        self.pi_proba = tf.nn.softmax(self.pi)
+        self.pi_vars = self._scope_vars('pi_network')
 
-        loss = tf.nn.sparse_softmax_cross_entropy_with_logits(logits=self.pi, labels=self.actions)
-        self.loss = tf.reduce_mean(loss * self.returns)
+        if self.baseline:
+            # State value estimation as the baseline
+            self.v = mlp(self.states, self.layer_sizes + [1], name='v_network')
+            self.v_vars = self._scope_vars('v_network')
+            self.target = self.returns - self.v  # advantage
 
-        trainable_vars = tf.trainable_variables()
-        print("trainable_vars:", trainable_vars)
-        print("model size:", np.sum([np.product(tvar.get_shape().as_list())
-                                     for tvar in trainable_vars]))
+            with tf.variable_scope('v_optimize'):
+                self.loss_v = tf.reduce_mean(tf.squared_difference(self.v, self.returns))
+                self.grads_v = tf.gradients(self.loss_v, self.v_vars)
+                self.optim_v = tf.train.AdamOptimizer(self.lr)
+                self.train_v_op = self.optim_v.apply_gradients(zip(self.grads_v, self.v_vars))
+        else:
+            self.target = tf.identity(self.returns)
 
-        self.grads = tf.gradients(self.loss, trainable_vars)
-        optimizer = tf.train.AdamOptimizer(self.lr)
-        self.train_op = optimizer.apply_gradients(zip(self.grads, trainable_vars))
+        with tf.variable_scope('pi_optimize'):
+            self.loss_pi = tf.reduce_mean(
+                self.target * tf.nn.sparse_softmax_cross_entropy_with_logits(
+                    logits=self.pi, labels=self.actions), name='loss_pi')
+            self.grads_pi = tf.gradients(self.loss_pi, self.pi_vars)
+            self.optim_pi = tf.train.AdamOptimizer(self.lr)
+            self.train_pi_op = self.optim_pi.apply_gradients(zip(self.grads_pi, self.pi_vars))
 
         with tf.variable_scope('summary'):
-            self.loss_summ = tf.summary.scalar('loss', self.loss)
+            self.loss_pi_summ = tf.summary.scalar('loss_pi', self.loss_pi)
+
             self.ep_reward = tf.placeholder(tf.float32, name='episode_reward')
             self.ep_reward_summ = tf.summary.scalar('episode_reward', self.ep_reward)
-            self.merged_summary = tf.summary.merge([self.loss_summ, self.ep_reward_summ])
+            summ_list = [self.loss_pi_summ, self.ep_reward_summ]
+
+            if self.baseline:
+                self.loss_v_summ = tf.summary.scalar('loss_v', self.loss_v)
+                summ_list.append(self.loss_v_summ)
+
+            self.merged_summary = tf.summary.merge(summ_list)
+
+        if self.baseline:
+            self.train_ops = [self.train_pi_op]
+        else:
+            self.train_ops = [self.train_pi_op, self.train_v_op]
 
         self.sess.run(tf.global_variables_initializer())
 
@@ -122,8 +150,8 @@ class ReinforcePolicy(Policy, BaseTFModelMixin):
 
             returns = returns[::-1]
 
-            _, loss_val, summ_str = self.sess.run(
-                [self.train_op, self.loss, self.merged_summary], feed_dict={
+            _, summ_str = self.sess.run(
+                [self.train_ops, self.merged_summary], feed_dict={
                     self.learning_rate: lr,
                     self.states: np.array(obs),
                     self.actions: np.array(actions),

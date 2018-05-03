@@ -1,26 +1,13 @@
+import click
+
 import gym
 import numpy as np
 from gym.wrappers import Monitor
+import time
 
-from playground.policies import QlearningPolicy, DqnPolicy, ReinforcePolicy
+from playground.policies import QlearningPolicy, DqnPolicy, ReinforcePolicy, ActorCriticPolicy
 from playground.utils.misc import plot_from_monitor_results
 from playground.utils.wrappers import DigitizedObservationWrapper
-
-
-def mountain_car_qlearning(model_name='mountain-car-qlearning'):
-    """Mountain car, reward is -1; only when done the reward is different.
-    """
-    env = gym.make('MountainCar-v0')
-    env = DigitizedObservationWrapper(env, n_bins=10)
-    print(env.action_space, env.observation_space)
-
-    policy = QlearningPolicy(env, model_name, alpha=0.5, gamma=0.99, epsilon=0.1,
-                             epsilon_decay=0.98, alpha_decay=0.97)
-    policy.build()
-    policy.train(100000, every_step=1000, with_monitor=True)
-
-    env.close()
-    plot_from_monitor_results('/tmp/' + model_name)
 
 
 def cartpole_qlearning(model_name='cartpole-qlearning'):
@@ -48,62 +35,86 @@ def cartpole_qlearning(model_name='cartpole-qlearning'):
     plot_from_monitor_results('/tmp/' + model_name)
 
 
-def cartpole_dqn(model_name='cartpole-dqn'):
-    env = gym.make('CartPole-v1')
-    env = Monitor(env, '/tmp/' + model_name, force=True)
+def run_qlearning(env_name, model_name):
+    """Mountain car, reward is -1; only when done the reward is different.
+    """
+    env = gym.make(env_name)
+    env = DigitizedObservationWrapper(env, n_bins=10)
+    print(env.action_space, env.observation_space)
 
-    policy = DqnPolicy(env, model_name,
-                       lr=0.001, epsilon=1.0, epsilon_final=0.02, batch_size=32,
-                       # q_model_type='rnn', q_model_params={'step_size': 16, 'lstm_size': 32},
-                       q_model_type='cnn', q_model_params={'layer_sizes': [64]},
-                       target_update_type='hard')
+    policy = QlearningPolicy(env, model_name, alpha=0.5, gamma=0.99, epsilon=0.1,
+                             epsilon_decay=0.98, alpha_decay=0.97)
     policy.build()
-    policy.train(500, annealing_episodes=450, every_episode=5)
+    policy.train(100000, every_step=1000, with_monitor=True)
 
     env.close()
     plot_from_monitor_results('/tmp/' + model_name)
 
 
-def cartpole_reinforce(model_name='cartpole-reinforce'):
-    env = gym.make('CartPole-v1')
+def run_dqn(env_name, model_name):
+    env = gym.make(env_name)
     env = Monitor(env, '/tmp/' + model_name, force=True)
 
-    policy = ReinforcePolicy(env, model_name, lr=0.002, lr_decay=0.999,
-                             batch_size=32, layer_sizes=[32, 32])
-    policy.build()
-    policy.train(750, every_episode=10)
-
-    env.close()
-    plot_from_monitor_results('/tmp/' + model_name)
-
-
-def test_cartpole_dqn(model_name='cartpole-dqn'):
-    env = gym.make('CartPole-v1')
     policy = DqnPolicy(env, model_name, training=False,
                        lr=0.001, epsilon=1.0, epsilon_final=0.02, batch_size=32,
                        q_model_type='mlp', q_model_params={'layer_sizes': [32, 32]},
                        target_update_type='hard')
     policy.build()
-    assert policy.load_model(), "Failed to load a trained model."
-    policy.test(10)
+
+    if policy.load_model():
+        policy.evaluate(10)
+    else:
+        policy.train(500, annealing_episodes=450, every_episode=10)
+        env.close()
+        plot_from_monitor_results('/tmp/' + model_name)
 
 
-def pacman_dqn(model_name='pacman-dqn'):
-    env = gym.make('MsPacman-v0')
+def run_reinforce(env_name, model_name):
+    env = gym.make(env_name)
     env = Monitor(env, '/tmp/' + model_name, force=True)
 
-    policy = DqnPolicy(env, model_name,
-                       lr=0.001, epsilon=1.0, epsilon_final=0.02, batch_size=32,
-                       q_model_type='cnn',
-                       target_update_type='hard', target_update_params={'every_step': 500})
+    policy = ReinforcePolicy(env, model_name, lr=0.1, lr_decay=0.998,
+                             batch_size=32, layer_sizes=[32, 32], baseline=True)
     policy.build()
-    policy.train(1000, annealing_episodes=900, every_episode=10)
+    policy.train(1000, every_episode=50)
 
     env.close()
     plot_from_monitor_results('/tmp/' + model_name)
 
 
+def run_actor_critic(env_name, model_name):
+    env = gym.make(env_name)
+    env = Monitor(env, '/tmp/' + model_name, force=True)
+
+    policy = ActorCriticPolicy(env, model_name,
+                               lr_a=0.01, lr_a_decay=0.995,
+                               lr_c=0.001, lr_c_decay=0.995,
+                               batch_size=32, layer_sizes=[16], grad_clip_norm=5.0)
+    policy.build()
+    policy.train(500, annealing_episodes=250, every_episode=10)
+
+    env.close()
+    plot_from_monitor_results('/tmp/' + model_name)
+
+@click.command()
+@click.argument('policy_name')
+@click.argument('env_name')
+@click.option('-m', '--model-name', default=None)
+def main(policy_name, env_name, model_name=None):
+    # env_name: 'CartPole-v1', 'MsPacman-v0', 'BipedalWalkerHardcore-v2'
+    if model_name is None:
+        model_name = "%s-%s-%d" % (env_name.lower(), policy_name.replace('_', '-'), int(time.time()))
+
+    run_fn = {
+        'qlearning': run_qlearning,
+        'dqn': run_dqn,
+        'reinforce': run_reinforce,
+        'actor_critic': run_actor_critic,
+    }[policy_name]
+
+    run_fn(env_name, model_name)
+    print("Training complete:", model_name)
+
+
 if __name__ == '__main__':
-    # cartpole_dqn('cartpole-dqn-hard-rnn')
-    cartpole_reinforce('cartpole-reinforce')
-    # pacman_dqn('pacman-dqn-hard')
+    main()

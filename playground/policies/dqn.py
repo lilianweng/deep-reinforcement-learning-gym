@@ -9,33 +9,6 @@ from playground.utils.misc import plot_learning_curve
 from playground.utils.tf_ops import mlp, conv2d_net, lstm_net
 
 
-class ReplayMemory(object):
-    def __init__(self, capacity=None, replace=False):
-        self.buffer = deque(maxlen=capacity)
-        self.replace = replace
-
-    def add(self, episode):
-        """A list of (s, a, r, s_next, done) for a complete episode.
-        done (bool): whether the new state `s_next` is finished.
-        """
-        self.buffer += episode
-
-    def sample(self, batch_size):
-        assert len(self.buffer) >= batch_size
-        # idxs = np.random.choice(range(len(self.buffer)), size=batch_size, replace=self.replace)
-        # selected = [self.buffer[i] for i in idxs]
-        selected = np.random.choice(self.buffer, size=batch_size, replace=self.replace)
-        return {
-            'state': [tup[0] for tup in selected],
-            'action': [tup[1] for tup in selected],
-            'reward': [tup[2] for tup in selected],
-            'state_next': [tup[3] for tup in selected],
-            'done': [tup[4] for tup in selected],
-        }
-
-    @property
-    def size(self):
-        return len(self.buffer)
 
 
 class ReplaceEpisodeMemory(object):
@@ -220,10 +193,8 @@ class DqnPolicy(Policy, BaseTFModelMixin):
 
         action_one_hot = tf.one_hot(self.actions, self.act_size, 1.0, 0.0, name='action_one_hot')
         pred = tf.reduce_sum(self.q * action_one_hot, reduction_indices=-1, name='q_acted')
-        print(self.q_target.shape, max_q_next_target.shape, self.done_flags.shape, self.rewards.shape,
-              action_one_hot.shape, (self.q * action_one_hot).shape, pred.shape)
 
-        self.loss = tf.reduce_mean(tf.square(pred - y), name="loss_mse_train")
+        self.loss = tf.reduce_mean(tf.square(pred - tf.stop_gradient(y)), name="loss_mse_train")
         self.optimizer = tf.train.AdamOptimizer(
             self.learning_rate).minimize(self.loss, name="adam_optim")
 

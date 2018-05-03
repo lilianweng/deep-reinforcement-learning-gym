@@ -1,11 +1,53 @@
 import os
 import time
-
+from collections import namedtuple
 import numpy as np
 import tensorflow as tf
 from gym.utils import colorize
-
+from collections import deque
 from playground.utils.misc import REPO_ROOT
+
+Transition = namedtuple('Transition', ['s', 'a', 'r', 's_next', 'done'], verbose=True)
+
+
+class ReplayMemory(object):
+    def __init__(self, capacity=100000, replace=False, tuple_class=Transition):
+        self.buffer = []
+        self.capacity = capacity
+        self.replace = replace
+        self.tuple_class = tuple_class
+        self.fields = tuple_class._fields
+
+    def add(self, tuple):
+        """Any named tuple item."""
+        assert isinstance(tuple, self.tuple_class)
+        self.buffer.append(tuple)
+        while self.size > self.capacity:
+            self.buffer.pop(0)
+
+    def _reformat(self, indices):
+        # Reformat a list of Transition tuples for training.
+        # indices: list<int>
+        return {
+            field_name : np.array([getattr(self.buffer[i], field_name) for i in indices])
+            for field_name in self.fields
+        }
+
+    def sample(self, batch_size):
+        assert len(self.buffer) >= batch_size
+        idxs = np.random.choice(range(len(self.buffer)), size=batch_size, replace=self.replace)
+        return self._reformat(idxs)
+
+    def pop(self, batch_size):
+        # Pop the first `batch_size` Transition items out.
+        i = min(self.size, batch_size)
+        batch = self._reformat(range(i))
+        self.buffer = self.buffer[i:]
+        return batch
+
+    @property
+    def size(self):
+        return len(self.buffer)
 
 
 class Policy:
@@ -46,7 +88,7 @@ class Policy:
         print("Avg. reward over {} episodes: {:.4f}".format(n_episodes, np.mean(reward_history)))
 
 
-class BaseTFModelMixin(object):
+class BaseTFModelMixin:
     """Abstract object representing an Reader model.
 
     Code borrowed from: https://github.com/devsisters/DQN-tensorflow/blob/master/dqn/base.py
