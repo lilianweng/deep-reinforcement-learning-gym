@@ -10,7 +10,15 @@ from playground.utils.misc import REPO_ROOT
 Transition = namedtuple('Transition', ['s', 'a', 'r', 's_next', 'done'], verbose=True)
 
 
-class ReplayMemory(object):
+class Trajectory:
+    def __init__(self):
+        self.buffer = []
+
+    def add(self, t):
+        self.buffer.append(t)
+
+
+class ReplayMemory:
     def __init__(self, capacity=100000, replace=False, tuple_class=Transition):
         self.buffer = []
         self.capacity = capacity
@@ -22,14 +30,14 @@ class ReplayMemory(object):
         """Any named tuple item."""
         assert isinstance(tuple, self.tuple_class)
         self.buffer.append(tuple)
-        while self.size > self.capacity:
+        while self.capacity and self.size > self.capacity:
             self.buffer.pop(0)
 
     def _reformat(self, indices):
         # Reformat a list of Transition tuples for training.
         # indices: list<int>
         return {
-            field_name : np.array([getattr(self.buffer[i], field_name) for i in indices])
+            field_name: np.array([getattr(self.buffer[i], field_name) for i in indices])
             for field_name in self.fields
         }
 
@@ -105,6 +113,11 @@ class BaseTFModelMixin:
         # for attr in self._attrs:
         #    name = attr if not attr.startswith('_') else attr[1:]
         #    setattr(self, name, getattr(self.config, attr))
+
+    def scope_vars(self, scope):
+        res = tf.get_collection(tf.GraphKeys.GLOBAL_VARIABLES, scope=scope)
+        assert len(res) > 0
+        return res
 
     def save_model(self, step=None):
         print(colorize(" [*] Saving checkpoints...", "green"))

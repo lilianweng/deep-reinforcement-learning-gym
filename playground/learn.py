@@ -5,7 +5,8 @@ import numpy as np
 from gym.wrappers import Monitor
 import time
 
-from playground.policies import QlearningPolicy, DqnPolicy, ReinforcePolicy, ActorCriticPolicy
+from playground.policies import QlearningPolicy, DqnPolicy, ReinforcePolicy
+from playground.policies.actor_critic_2 import ActorCriticPolicy
 from playground.utils.misc import plot_from_monitor_results
 from playground.utils.wrappers import DigitizedObservationWrapper
 
@@ -58,15 +59,11 @@ def run_dqn(env_name, model_name):
     policy = DqnPolicy(env, model_name, training=False,
                        lr=0.001, epsilon=1.0, epsilon_final=0.02, batch_size=32,
                        q_model_type='mlp', q_model_params={'layer_sizes': [32, 32]},
-                       target_update_type='hard')
+                       target_update_type='hard', double_q=True)
     policy.build()
-
-    if policy.load_model():
-        policy.evaluate(10)
-    else:
-        policy.train(500, annealing_episodes=450, every_episode=10)
-        env.close()
-        plot_from_monitor_results('/tmp/' + model_name)
+    policy.train(500, annealing_episodes=450, every_episode=10)
+    env.close()
+    plot_from_monitor_results('/tmp/' + model_name)
 
 
 def run_reinforce(env_name, model_name):
@@ -86,15 +83,13 @@ def run_actor_critic(env_name, model_name):
     env = gym.make(env_name)
     env = Monitor(env, '/tmp/' + model_name, force=True)
 
-    policy = ActorCriticPolicy(env, model_name,
-                               lr_a=0.01, lr_a_decay=0.995,
-                               lr_c=0.001, lr_c_decay=0.995,
-                               batch_size=32, layer_sizes=[16], grad_clip_norm=5.0)
+    policy = ActorCriticPolicy(env, model_name, batch_size=16, layer_sizes=[32])
     policy.build()
-    policy.train(500, annealing_episodes=250, every_episode=10)
+    policy.train(500, annealing_episodes=400, every_episode=10)
 
     env.close()
     plot_from_monitor_results('/tmp/' + model_name)
+
 
 @click.command()
 @click.argument('policy_name')

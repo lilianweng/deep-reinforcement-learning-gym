@@ -11,29 +11,22 @@ https://lilianweng.github.io/lil-log/2018/04/08/policy-gradient-algorithms.html#
 """
 import numpy as np
 import tensorflow as tf
-from playground.policies.base import BaseTFModelMixin, Policy,ReplayMemory
+from playground.policies.base import BaseTFModelMixin, Policy, ReplayMemory
 from playground.utils.misc import plot_learning_curve
 from playground.utils.tf_ops import mlp
 from collections import namedtuple
 
 Record = namedtuple('Record', ['s', 'a', 'r', 'td_target'])
 
-def sample(preds, temperature=1.0):
-    # function to sample an index from a probability array
-    preds = np.asarray(preds).astype('float64')
-    preds = np.log(preds) / temperature
-    exp_preds = np.exp(preds)
-    preds = exp_preds / np.sum(exp_preds)
-    probas = np.random.multinomial(1, preds, 1)
-    return np.argmax(probas)
-
 
 class ActorCriticPolicy(Policy, BaseTFModelMixin):
     def __init__(self, env, name, training=True, gamma=0.9,
-                 lr_a=0.01, lr_a_decay=0.999,
-                 lr_c=0.001, lr_c_decay=0.999,
-                 batch_size=32, layer_sizes=None,
-                 grad_clip_norm=None):
+                 lr_a=0.02, lr_a_decay=0.995,
+                 lr_c=0.01, lr_c_decay=0.995,
+                 batch_size=32,
+                 layer_sizes=None,
+                 grad_clip_norm=None,
+                 deterministic=True):
         Policy.__init__(self, env, name, training=training, gamma=gamma)
         BaseTFModelMixin.__init__(self, name)
 
@@ -46,6 +39,9 @@ class ActorCriticPolicy(Policy, BaseTFModelMixin):
         self.grad_clip_norm = grad_clip_norm
 
         self.memory = ReplayMemory(tuple_class=Record)
+
+        if deterministic:
+            np.random.seed(0)
 
     def act(self, state, epsilon=0.1):
         if self.training and np.random.random() < epsilon:
@@ -83,7 +79,7 @@ class ActorCriticPolicy(Policy, BaseTFModelMixin):
         self.states = tf.placeholder(tf.float32, shape=(None, self.obs_size), name='state')
         self.actions = tf.placeholder(tf.int32, shape=(None,), name='action')
         self.rewards = tf.placeholder(tf.float32, shape=(None,), name='reward')
-        self.td_targets = tf.placeholder(tf.float32, shape=(None, ), name='td_target')
+        self.td_targets = tf.placeholder(tf.float32, shape=(None,), name='td_target')
 
         # Actor: action probabilities
         self.actor = mlp(self.states, self.layer_sizes + [self.act_size], name='actor')
@@ -91,17 +87,17 @@ class ActorCriticPolicy(Policy, BaseTFModelMixin):
         self.actor_vars = self._scope_vars('actor')
 
         # Critic: action value (Q-value)
-        self.critic = mlp(self.states, self.layer_sizes + [1], name='critic')
+        self.critic = mlp(self.states, self.layer_sizes + [self.act_size], name='critic')
         self.critic_vars = self._scope_vars('critic')
 
         action_ohe = tf.one_hot(self.actions, self.act_size, 1.0, 0.0, name='action_one_hot')
-        pred_q = tf.reduce_sum(self.critic * action_ohe, reduction_indices=-1, name='q_acted')
-        self.td_errors = tf.abs(self.td_targets - pred_q, name='td_error')
+        self.pred_value = tf.reduce_sum(self.critic * action_ohe, reduction_indices=-1, name='q_acted')
+        # self.td_errors = self.td_targets - self.pred_value
+        self.td_errors = self.td_targets - tf.reshape(self.pred_value, [-1])
 
         with tf.variable_scope('critic_train'):
             # self.reg_c = tf.reduce_mean([tf.nn.l2_loss(x) for x in self.critic_vars])
-            self.loss_c = tf.reduce_mean(tf.square(self.td_errors)) #+ 0.001 * self.reg_c
-
+            self.loss_c = tf.reduce_mean(tf.square(self.td_errors))  # + 0.001 * self.reg_c
             self.optim_c = tf.train.AdamOptimizer(self.learning_rate_c)
             self.grads_c = self.optim_c.compute_gradients(self.loss_c, self.critic_vars)
             if self.grad_clip_norm:
@@ -111,13 +107,12 @@ class ActorCriticPolicy(Policy, BaseTFModelMixin):
             self.train_op_c = self.optim_c.apply_gradients(self.grads_c)
 
         with tf.variable_scope('actor_train'):
-            self.reg_a = tf.reduce_mean([tf.nn.l2_loss(x) for x in self.actor_vars])
+            # self.reg_a = tf.reduce_mean([tf.nn.l2_loss(x) for x in self.actor_vars])
             # self.entropy_a =- tf.reduce_sum(self.actor * tf.log(self.actor))
             self.loss_a = tf.reduce_mean(
                 tf.stop_gradient(self.td_errors) * tf.nn.sparse_softmax_cross_entropy_with_logits(
                     logits=self.actor, labels=self.actions),
-                name='loss_actor') # + 0.001 * self.reg_a
-
+                name='loss_actor')  # + 0.001 * self.reg_a
             self.optim_a = tf.train.AdamOptimizer(self.learning_rate_a)
             self.grads_a = self.optim_a.compute_gradients(self.loss_a, self.actor_vars)
             if self.grad_clip_norm:
@@ -127,9 +122,10 @@ class ActorCriticPolicy(Policy, BaseTFModelMixin):
             self.train_op_a = self.optim_a.apply_gradients(self.grads_a)
 
         with tf.variable_scope('summary'):
-            self.td_err_summ = tf.summary.histogram('td_errors', self.td_errors)
-            self.grads_a_summ = [tf.summary.scalar('grads/a_' + var.name, tf.norm(grad)) for grad, var in self.grads_a]
-            self.grads_c_summ = [tf.summary.scalar('grads/c_' + var.name, tf.norm(grad)) for grad, var in self.grads_c]
+            self.grads_a_summ = [tf.summary.scalar('grads/a_' + var.name, tf.norm(grad)) for
+                                 grad, var in self.grads_a]
+            self.grads_c_summ = [tf.summary.scalar('grads/c_' + var.name, tf.norm(grad)) for
+                                 grad, var in self.grads_c]
             self.loss_c_summ = tf.summary.scalar('loss/critic', self.loss_c)
             self.loss_a_summ = tf.summary.scalar('loss/actor', self.loss_a)
 
@@ -138,7 +134,7 @@ class ActorCriticPolicy(Policy, BaseTFModelMixin):
 
             self.merged_summary = tf.summary.merge_all(key=tf.GraphKeys.SUMMARIES)
 
-        self.train_ops = [self.train_op_c, self.train_op_a]
+        self.train_ops = [self.train_op_a, self.train_op_c]
 
         self.sess.run(tf.global_variables_initializer())
 
@@ -151,14 +147,14 @@ class ActorCriticPolicy(Policy, BaseTFModelMixin):
         lr_c = self.lr_c
         lr_a = self.lr_a
 
-        eps = .5  # self.epsilon
+        eps = 1.0 # self.epsilon
         annealing_episodes = annealing_episodes or n_episodes
         eps_drop = (eps - 0.01) / annealing_episodes
         print("eps_drop:", eps_drop)
 
         for n_episode in range(n_episodes):
             ob = self.env.reset()
-            a = self.act(ob)
+            a = self.act(ob, eps)
             done = False
 
             obs = []
@@ -177,9 +173,13 @@ class ActorCriticPolicy(Policy, BaseTFModelMixin):
                 rewards.append(r)
 
                 # a_next = self.act(ob_next)
-                with self.sess.as_default():
-                    next_value = self.critic.eval({self.states: [ob_next]})[0][0]
-                td_target = r + self.gamma * next_value
+                if done:
+                    next_state_value = -100.
+                else:
+                    with self.sess.as_default():
+                        next_state_value = max(self.critic.eval({self.states: [ob_next]})[0])
+
+                td_target = r + self.gamma * next_state_value
                 td_targets.append(td_target)
 
                 self.memory.add(Record(ob, a, r, td_target))
@@ -205,21 +205,18 @@ class ActorCriticPolicy(Policy, BaseTFModelMixin):
             reward_averaged.append(np.mean(reward_history[-10:]))
             episode_reward = 0.
 
-            # print("td_targets[-5:] =", td_targets[-5:])
-
             lr_c *= self.lr_c_decay
             lr_a *= self.lr_a_decay
-
-            if eps > 0.01:
-                eps -= eps_drop
+            if eps > 0.01: eps -= eps_drop
 
             if reward_history and every_episode and n_episode % every_episode == 0:
                 # Report the performance every `every_step` steps
-                print("[episodes:{}/step:{}], best:{}, avg:{:.2f}:{}, lr:{:.4f}|{:.4f} eps:{:.4f}".format(
-                    n_episode, step, np.max(reward_history),
-                    np.mean(reward_history[-10:]), reward_history[-5:],
-                    lr_c, lr_a, eps,
-                ))
+                print(
+                    "[episodes:{}/step:{}], best:{}, avg:{:.2f}:{}, lr:{:.4f}|{:.4f} eps:{:.4f}".format(
+                        n_episode, step, np.max(reward_history),
+                        np.mean(reward_history[-10:]), reward_history[-5:],
+                        lr_c, lr_a, eps,
+                    ))
                 # self.save_model(step=step)
 
         self.save_model(step=step)
