@@ -1,0 +1,18 @@
+{
+    "env_name": "CartPole-v1",
+    "policy_name": "ReinforcePolicy",
+    "policy_params": {
+        "baseline": true,
+        "batch_size": 32,
+        "layer_sizes": [
+            32,
+            32
+        ],
+        "lr": 0.001,
+        "lr_decay": 0.998
+    },
+    "train_params": {
+        "every_episode": 10,
+        "n_episodes": 1200
+    }
+}

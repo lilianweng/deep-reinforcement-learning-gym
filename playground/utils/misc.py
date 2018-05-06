@@ -8,9 +8,6 @@ from gym.wrappers.monitor import load_results
 REPO_ROOT = os.path.abspath(os.path.join(os.path.dirname(__file__), '..', '..'))
 
 
-def chunkify():
-    pass
-
 def plot_learning_curve(filename, value_dict, xlabel='step'):
     # Plot step vs the mean(last 50 episodes' rewards)
     fig = plt.figure(figsize=(12, 4 * len(value_dict)))
@@ -23,8 +20,8 @@ def plot_learning_curve(filename, value_dict, xlabel='step'):
         ax.grid('k--', alpha=0.3)
 
     plt.tight_layout()
-    os.makedirs('figs', exist_ok=True)
-    plt.savefig(os.path.join('figs', filename))
+    os.makedirs(os.path.join(REPO_ROOT, 'figs'), exist_ok=True)
+    plt.savefig(os.path.join(REPO_ROOT, 'figs', filename))
 
 
 def plot_from_monitor_results(monitor_dir, window=10):
@@ -48,5 +45,5 @@ def plot_from_monitor_results(monitor_dir, window=10):
     ax2.set_ylabel('episode reward')
     ax2.grid('k--', alpha=0.4)
 
-    os.makedirs('figs', exist_ok=True)
-    plt.savefig(os.path.join('figs', os.path.basename(monitor_dir) + '-monitor'))
+    os.makedirs(os.path.join(REPO_ROOT, 'figs'), exist_ok=True)
+    plt.savefig(os.path.join(REPO_ROOT, 'figs', os.path.basename(monitor_dir) + '-monitor'))

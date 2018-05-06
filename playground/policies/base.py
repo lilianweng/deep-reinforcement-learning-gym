@@ -7,15 +7,7 @@ from gym.utils import colorize
 from collections import deque
 from playground.utils.misc import REPO_ROOT
 
-Transition = namedtuple('Transition', ['s', 'a', 'r', 's_next', 'done'], verbose=True)
-
-
-class Trajectory:
-    def __init__(self):
-        self.buffer = []
-
-    def add(self, t):
-        self.buffer.append(t)
+Transition = namedtuple('Transition', ['s', 'a', 'r', 's_next', 'done'])
 
 
 class ReplayMemory:
@@ -26,10 +18,13 @@ class ReplayMemory:
         self.tuple_class = tuple_class
         self.fields = tuple_class._fields
 
-    def add(self, tuple):
+    def add(self, record):
         """Any named tuple item."""
-        assert isinstance(tuple, self.tuple_class)
-        self.buffer.append(tuple)
+        if isinstance(record, self.tuple_class):
+            self.buffer.append(record)
+        elif isinstance(record, list):
+            self.buffer += record
+
         while self.capacity and self.size > self.capacity:
             self.buffer.pop(0)
 
@@ -58,14 +53,49 @@ class ReplayMemory:
         return len(self.buffer)
 
 
+class ReplayTrajMemory:
+    def __init__(self, capacity=100000, step_size=16):
+        self.buffer = deque(maxlen=capacity)
+        self.step_size = step_size
+
+    def add(self, traj):
+        # traj (list<Transition>)
+        if len(traj) >= self.step_size:
+            self.buffer.append(traj)
+
+    def sample(self, batch_size):
+        traj_idxs = np.random.choice(range(len(self.buffer)), size=batch_size, replace=True)
+        batch_data = {field_name: [] for field_name in Transition._fields}
+
+        for traj_idx in traj_idxs:
+            i = np.random.randint(0, len(self.buffer[traj_idx]) + 1 - self.step_size)
+            transitions = self.buffer[traj_idx][i: i + self.step_size]
+
+            for field_name in Transition._fields:
+                batch_data[field_name] += [getattr(t, field_name) for t in transitions]
+
+        assert all(len(v) == batch_size * self.step_size for v in batch_data.values())
+        return {k: np.array(v) for k, v in batch_data.items()}
+
+    @property
+    def size(self):
+        return len(self.buffer)
+
+    @property
+    def transition_size(self):
+        return sum(map(len, self.buffer))
+
+
 class Policy:
-    def __init__(self, env, name, training=True, gamma=0.99):
+    def __init__(self, env, name, training=True, gamma=0.99, deterministic=False):
         self.env = env
         self.gamma = gamma
         self.training = training
         self.name = name
 
-        np.random.seed(int(time.time()))
+        if deterministic:
+            np.random.seed(1)
+            tf.set_random_seed(1)
 
     def act(self, state, **kwargs):
         pass
@@ -117,6 +147,9 @@ class BaseTFModelMixin:
     def scope_vars(self, scope):
         res = tf.get_collection(tf.GraphKeys.GLOBAL_VARIABLES, scope=scope)
         assert len(res) > 0
+        print("Variables in scope '%s'" % scope)
+        for v in res:
+            print("\t" + str(v))
         return res
 
     def save_model(self, step=None):

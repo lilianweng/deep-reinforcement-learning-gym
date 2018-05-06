@@ -3,16 +3,17 @@ import numpy as np
 from gym.utils import colorize
 
 
-def mlp(inputs, layers_sizes, name="mlp", reuse=None, dropout_keep_prob=None,
-        batch_norm=False, training=True):
+def mlp_net(inputs, layers_sizes, name="mlp", reuse=None, dropout_keep_prob=None,
+            batch_norm=False, training=True):
     print(colorize("Building mlp {} | sizes: {}".format(
         name, [inputs.shape[0]] + layers_sizes), "green"))
 
     with tf.variable_scope(name):
         for i, size in enumerate(layers_sizes):
-            if i > 0 and dropout_keep_prob is not None:
+            print("Layer:", name + '_l' + str(i), size)
+            if i > 0 and dropout_keep_prob is not None and training:
                 # No dropout on the input layer.
-                inputs = tf.nn.dropout(inputs, dropout_keep_prob, training=training)
+                inputs = tf.nn.dropout(inputs, dropout_keep_prob)
 
             inputs = tf.layers.dense(
                 inputs,
@@ -30,8 +31,8 @@ def mlp(inputs, layers_sizes, name="mlp", reuse=None, dropout_keep_prob=None,
     return inputs
 
 
-def conv2d_net(inputs, output_size, name="conv2d", conv_layers=2, with_pooling=True,
-               dropout_keep_proba=None, training=True):
+def conv2d_net(inputs, layers_sizes, name="conv2d", conv_layers=2, with_pooling=True,
+               dropout_keep_prob=None, training=True):
     print(colorize("Building conv net " + name, "green"))
     print("inputs.shape =", inputs.shape)
 
@@ -57,16 +58,10 @@ def conv2d_net(inputs, output_size, name="conv2d", conv_layers=2, with_pooling=T
                 inputs = tf.layers.max_pooling2d(inputs, [2, 2], 2, name='pool' + str(i))
                 print('pool' + str(i) + '.shape =', inputs.shape)
 
-        flat = tf.reshape(inputs, [-1, np.prod(inputs.shape.as_list()[1:])], name='flat')
-        mlp = tf.layers.dense(flat, 1024, activation=tf.nn.relu, name="mlp")
+        flatten = tf.reshape(inputs, [-1, np.prod(inputs.shape.as_list()[1:])], name='flatten')
+        outputs = mlp_net(flatten, layers_sizes, name='fc', dropout_keep_prob=dropout_keep_prob)
 
-        if dropout_keep_proba:
-            mlp = tf.layers.dropout(mlp, dropout_keep_proba, training=training, name="dropout")
-
-        outputs = tf.layers.dense(inputs=mlp, units=output_size, name="output")
-
-        print("flat.shape =", flat.shape)
-        print("mlp.shape =", mlp.shape)
+        print("flatten.shape =", flatten.shape)
         print("outputs.shape =", outputs.shape)
 
     return outputs
@@ -109,12 +104,16 @@ def alexnet(inputs, output_size, training=True, name='alexnet', dropout_keep_pro
     return net
 
 
-def lstm_net(inputs, output_size, name='lstm', lstm_layers=1, lstm_size=256,
+def lstm_net(inputs, layers_sizes, name='lstm', step_size=16, lstm_layers=1, lstm_size=256,
              pre_lstm_dense_layer=None, dropout_keep_prob=None, training=True):
-    """inputs = (None, None, img_width, img_height)
+    """inputs = (batch_size * step_size, *observation_size)
     """
     print(colorize("Building lstm net " + name, "green"))
     print("inputs.shape =", inputs.shape)
+
+    state_size = inputs.shape.as_list()[1]
+    inputs = tf.reshape(inputs, [-1, step_size, state_size])
+    print("reshaped inputs.shape =", inputs.shape)
 
     def _make_cell():
         cell = tf.nn.rnn_cell.LSTMCell(lstm_size, state_is_tuple=True, reuse=not training)
@@ -125,30 +124,27 @@ def lstm_net(inputs, output_size, name='lstm', lstm_layers=1, lstm_size=256,
     with tf.variable_scope(name):
 
         if pre_lstm_dense_layer:
-            inputs = tf.nn.relu(mlp(inputs, [pre_lstm_dense_layer], name='pre_lstm'))
+            inputs = tf.nn.relu(mlp_net(inputs, [pre_lstm_dense_layer], name='pre_lstm'))
 
-        for layer in range(lstm_layers):
-            with tf.variable_scope('layer_%d' % layer):
-                cell = tf.contrib.rnn.MultiRNNCell([_make_cell() for _ in range(lstm_layers)],
-                                                   state_is_tuple=True)
+        with tf.variable_scope('lstm_cells'):
+            # Before transpose, inputs.get_shape() = (batch_size, num_steps, lstm_size)
+            # After transpose, inputs.get_shape() = (num_steps, batch_size, lstm_size)
+            lstm_inputs = tf.transpose(inputs, [1, 0, 2])
 
-                # Before transpose, inputs.get_shape() = (batch_size, num_steps, lstm_size)
-                # After transpose, inputs.get_shape() = (num_steps, batch_size, lstm_size)
-                lstm_inputs = tf.transpose(inputs, [1, 0, 2])
-                lstm_outputs, lstm_states = tf.nn.dynamic_rnn(cell, lstm_inputs, dtype=tf.float32)
+            cell = tf.contrib.rnn.MultiRNNCell([
+                _make_cell() for _ in range(lstm_layers)], state_is_tuple=True)
+            lstm_outputs, lstm_states = tf.nn.dynamic_rnn(cell, lstm_inputs, dtype=tf.float32)
 
-                # transpose back.
-                lstm_outputs = tf.transpose(lstm_outputs, [1, 0, 2])
+            # transpose back.
+            lstm_outputs = tf.transpose(lstm_outputs, [1, 0, 2])
 
-                print("cell =", cell)
-                print("lstm_states =", lstm_states)
-                print("lstm_outputs.shape =", lstm_outputs.shape)
+            print("cell =", cell)
+            print("lstm_states =", lstm_states)
+            print("lstm_outputs.shape =", lstm_outputs.shape)
 
-                lstm_inputs = lstm_outputs  # feed previous layer's output to the next layer
-
-        outputs = tf.layers.dense(lstm_outputs, units=output_size, name="output")
-        # outputs = tf.reshape(outputs, shape=(-1, output_size))
+        outputs = mlp_net(lstm_outputs, layers_sizes, name="outputs")
         print("outputs.shape =", outputs.shape)
-        return outputs, lstm_states
 
-
+        outputs = tf.reshape(outputs, [-1, layers_sizes[-1]])
+        print("reshaped outputs.shape =", outputs.shape)
+        return outputs

@@ -4,49 +4,10 @@ import numpy as np
 import tensorflow as tf
 from gym.spaces import Box, Discrete
 
-from playground.policies.base import BaseTFModelMixin, Policy, ReplayMemory, Transition
+from playground.policies.base import BaseTFModelMixin, Policy, ReplayMemory, ReplayTrajMemory, Transition
 from playground.utils.misc import plot_learning_curve
-from playground.utils.tf_ops import mlp, conv2d_net, lstm_net
-
-
-class ReplaceEpisodeMemory(object):
-    def __init__(self, capacity=100000, step_size=16):
-        self.buffer = deque(maxlen=capacity)
-        self.step_size = step_size
-
-    def add(self, episode):
-        """A list of (s, a, r, s_next, done) for a complete episode.
-        """
-        assert all(len(ep) == 5 for ep in episode)
-        assert all(not ep[4] for ep in episode[:-1])
-        assert episode[-1][4]
-        if len(episode) >= self.step_size:
-            self.buffer.append(episode)
-
-    def sample(self, batch_size):
-        ep_idxs = np.random.choice(range(len(self.buffer)), size=batch_size, replace=True)
-        selected = {
-            'state': [],
-            'action': [],
-            'reward': [],
-            'state_next': [],
-            'done': [],
-        }
-        for ep_idx in ep_idxs:
-            i = np.random.randint(0, len(self.buffer[ep_idx]) + 1 - self.step_size)
-            ep_selected = self.buffer[ep_idx][i: i + self.step_size]
-            selected['state'].append([tup[0] for tup in ep_selected])
-            selected['action'].append([tup[1] for tup in ep_selected])
-            selected['reward'].append([tup[2] for tup in ep_selected])
-            selected['state_next'].append([tup[3] for tup in ep_selected])
-            selected['done'].append([tup[4] for tup in ep_selected])
-
-        return {k: np.array(v) for k, v in selected.items()}
-
-    @property
-    def size(self):
-        return len(self.buffer)
-
+from playground.utils.tf_ops import mlp_net, conv2d_net, lstm_net
+from playground.utils.wrappers import DiscretizeActionWrapper
 
 class DqnPolicy(Policy, BaseTFModelMixin):
     def __init__(self, env, name,
@@ -58,24 +19,28 @@ class DqnPolicy(Policy, BaseTFModelMixin):
                  epsilon_final=0.01,
                  batch_size=64,
                  memory_capacity=100000,
-                 q_model_type='mlp',
-                 q_model_params=None,
+                 model_type='mlp',
+                 step_size=1,  # only > 1 if model_type is 'lstm'.
+                 layer_sizes=None,  # [64] by default.
+                 model_params=None,
                  target_update_type='hard',
                  target_update_params=None,
-                 double_q=False,
-                 dueling=False):
+                 double_q=True,
+                 dueling=True):
         """
-        Q func: cnn
-
-        DQN:
-            target = reward(s,a) + gamma * max(Q(s')
+        model_params: 'layer_sizes', 'step_size', 'lstm_layers', 'lstm_size'
         """
         Policy.__init__(self, env, name, gamma=gamma, training=training)
         BaseTFModelMixin.__init__(self, name, saver_max_to_keep=5)
 
-        assert isinstance(self.env.action_space, Discrete)
+        if isinstance(self.env.action_space, Box):
+            self.env = DiscretizeActionWrapper(self.env, n_bins=10)
+        else:
+            assert isinstance(self.env.action_space, Discrete)
+
         assert isinstance(self.env.observation_space, Box)
-        assert q_model_type in ('mlp', 'conv', 'lstm')
+        assert model_type in ('mlp', 'conv', 'lstm')
+        assert step_size == 1 or model_type == 'lstm'
         assert target_update_type in ('hard', 'soft')
 
         self.gamma = gamma
@@ -85,8 +50,10 @@ class DqnPolicy(Policy, BaseTFModelMixin):
         self.epsilon_final = epsilon_final
         self.training = training
 
-        self.q_model_type = q_model_type
-        self.q_model_params = q_model_params or {}
+        self.model_type = model_type
+        self.model_params = model_params or {}
+        self.layer_sizes = layer_sizes or [64]
+        self.step_size = step_size
         self.double_q = double_q
         self.dueling = dueling
 
@@ -94,9 +61,8 @@ class DqnPolicy(Policy, BaseTFModelMixin):
         self.target_update_every_step = (target_update_params or {}).get('every_step', 100)
         self.target_update_tau = (target_update_params or {}).get('tau', 0.05)
 
-        if self.q_model_type == 'rnn':
-            self.step_size = q_model_params.get('step_size', 32)
-            self.memory = ReplaceEpisodeMemory(capacity=memory_capacity, step_size=self.step_size)
+        if self.model_type == 'lstm':
+            self.memory = ReplayTrajMemory(capacity=memory_capacity, step_size=step_size)
         else:
             self.memory = ReplayMemory(capacity=memory_capacity)
 
@@ -111,21 +77,21 @@ class DqnPolicy(Policy, BaseTFModelMixin):
     def obs_size(self):
         # Returns: A list
         sample = self.env.observation_space.sample()
-        if self.q_model_type == 'mlp':
+        if self.model_type == 'mlp':
             return [sample.flatten().shape[0]]
-        elif self.q_model_type == 'conv':
+        elif self.model_type == 'conv':
             return list(sample.shape)
-        elif self.q_model_type == 'lstm':
+        elif self.model_type == 'lstm':
             return list(sample.shape)
         else:
             assert NotImplementedError()
 
     def obs_to_inputs(self, ob):
-        if self.q_model_type == 'mlp':
+        if self.model_type == 'mlp':
             return ob.flatten()
-        elif self.q_model_type == 'conv':
+        elif self.model_type == 'conv':
             return ob
-        elif self.q_model_type == 'lstm':
+        elif self.model_type == 'lstm':
             return ob
         else:
             assert NotImplementedError()
@@ -140,81 +106,82 @@ class DqnPolicy(Policy, BaseTFModelMixin):
         self.sess.run([v_t.assign(v_t * (1. - tau) + v * tau)
                        for v_t, v in zip(self.q_target_vars, self.q_vars)])
 
-    def _create_mlp_net(self):
-        self.states = tf.placeholder(tf.float32, shape=(None, self.obs_size), name='state')
-        self.states_next = tf.placeholder(tf.float32, shape=(None, self.obs_size), name='state_next')
-        self.actions = tf.placeholder(tf.int32, shape=(None, ), name='action')
-        self.actions_next = tf.placeholder(tf.int32, shape=(None, ), name='action_next') # determined by the primary network
-        self.rewards = tf.placeholder(tf.float32, shape=(None, ), name='reward')
-        self.done_flags = tf.placeholder(tf.float32, shape=(None, ), name='done')  # binary
+    def _extract_network_params(self):
+        net_params = {}
+
+        if self.model_type == 'mlp':
+            net_class = mlp_net
+        elif self.model_type == 'conv':
+            net_class = conv2d_net
+        elif self.model_type == 'lstm':
+            net_class = lstm_net
+            net_params = {
+                'lstm_layers': self.model_params.get('lstm_layers', 1),
+                'lstm_size': self.model_params.get('lstm_size', 256),
+                'step_size': self.step_size,
+            }
+        else:
+            raise NotImplementedError("Unknown model type: '%s'" % self.model_type)
+
+        return net_class, net_params
+
+    def create_q_networks(self):
+        # The first dimension should have batch_size * step_size
+        self.states = tf.placeholder(tf.float32, shape=(None, *self.obs_size), name='state')
+        self.states_next = tf.placeholder(tf.float32, shape=(None, *self.obs_size), name='state_next')
+        self.actions = tf.placeholder(tf.int32, shape=(None,), name='action')
+        self.actions_next = tf.placeholder(tf.int32, shape=(None,), name='action_next')
+        self.rewards = tf.placeholder(tf.float32, shape=(None,), name='reward')
+        self.done_flags = tf.placeholder(tf.float32, shape=(None,), name='done')
 
         # The output is a probability distribution over all the actions.
-        # layers_sizes = [256, 128, 64] + [self.act_size]
-        layers_sizes = self.q_model_params.get('layer_sizes', [256, 128, 64])
-        self.q = mlp(self.states, layers_sizes + [self.act_size], name='Q_primary')
-        self.q_target = mlp(self.states_next, layers_sizes + [self.act_size], name='Q_target')
+        layers_sizes = self.model_params.get('layer_sizes', [32, 32])
 
-    def _create_conv_net(self):
-        pass
+        net_class, net_params = self._extract_network_params()
 
-    def _create_lstm_net(self):
-        pass
+        if self.dueling:
+            self.q_hidden = net_class(self.states, layers_sizes[:-1], name='Q_primary', **net_params)
+            self.adv = mlp_net(self.q_hidden, layers_sizes[-1:] + [self.act_size], name='Q_primary_adv')
+            self.v = mlp_net(self.q_hidden, layers_sizes[-1:] + [1], name='Q_primary_v')
 
-    def create_primary_and_target_q_networks(self):
-        pass
+            # Average Dueling
+            self.q = self.v + (self.adv - tf.reduce_mean(
+                self.adv, reduction_indices=1, keep_dims=True))
 
-    def build(self):
-        self.learning_rate = tf.placeholder(tf.float32, shape=None, name='learning_rate')
+            self.q_target_hidden = net_class(self.states_next, layers_sizes[:-1], name='Q_target', **net_params)
+            self.adv_target = mlp_net(self.q_target_hidden, layers_sizes[-1:] + [self.act_size], name='Q_target_adv')
+            self.v_target = mlp_net(self.q_target_hidden, layers_sizes[-1:] + [1], name='Q_target_v')
 
-        if self.q_model_type == 'lstm':
-            step_size_list = [self.step_size]
+            # Average Dueling
+            self.q_target = self.v_target + (self.adv_target - tf.reduce_mean(
+                self.adv_target, reduction_indices=1, keep_dims=True))
+
         else:
-            step_size_list = []
+            self.q = net_class(self.states, layers_sizes + [self.act_size], name='Q_primary', **net_params)
+            self.q_target = net_class(self.states_next, layers_sizes + [self.act_size], name='Q_target', **net_params)
 
-        self.states = tf.placeholder(tf.float32, shape=(None, *(step_size_list + self.obs_size)), name='state')
-        self.states_next = tf.placeholder(tf.float32, shape=(None, *(step_size_list + self.obs_size)), name='state_next')
-        self.actions = tf.placeholder(tf.int32, shape=(None, *step_size_list), name='action')
-        self.rewards = tf.placeholder(tf.float32, shape=(None, *step_size_list), name='reward')
-        self.done_flags = tf.placeholder(tf.float32, shape=(None, *step_size_list), name='done')  # binary
-
-        if self.q_model_type == 'mlp':
-            # The output is a probability distribution over all the actions.
-            # layers_sizes = [256, 128, 64] + [self.act_size]
-            layers_sizes = self.q_model_params.get('layer_sizes', [256, 128, 64])
-            self.q = mlp(self.states, layers_sizes + [self.act_size], name='Q_primary')
-            self.q_target = mlp(self.states_next, layers_sizes + [self.act_size], name='Q_target')
-
-        elif self.q_model_type == 'conv':
-            self.q = conv2d_net(self.states, self.act_size, name='Q_primary')
-            self.q_target = conv2d_net(self.states_next, self.act_size, name='Q_target')
-
-        elif self.q_model_type == 'lstm':
-            lstm_layers = self.q_model_params.get('lstm_layers', 1)
-            lstm_size = self.q_model_params.get('lstm_size', 256)
-            self.q, _ = lstm_net(self.states, self.act_size, name='Q_primary',
-                                     lstm_layers=lstm_layers, lstm_size=lstm_size)
-            self.q_target, _ = lstm_net(self.states_next, self.act_size, name='Q_target',
-                                     lstm_layers=lstm_layers, lstm_size=lstm_size)
-        else:
-            assert NotImplementedError()
-
+        # The primary and target Q networks should match.
         self.q_vars = self.scope_vars('Q_primary')
         self.q_target_vars = self.scope_vars('Q_target')
-        assert len(self.q_vars) == len(self.q_target_vars)
+        assert len(self.q_vars) == len(self.q_target_vars), "Two Q-networks are not same."
+
+    def build(self):
+        self.create_q_networks()
 
         self.actions_selected_by_q = tf.argmax(self.q, axis=-1, name='action_selected')
         action_one_hot = tf.one_hot(self.actions, self.act_size, 1.0, 0.0, name='action_one_hot')
         pred = tf.reduce_sum(self.q * action_one_hot, reduction_indices=-1, name='q_acted')
 
         if self.double_q:
-            self.actions_next = tf.placeholder(tf.int32, shape=(None, *step_size_list), name='action_next')
-            actions_next_flatten = tf.range(0, self.batch_size) * self.q_target.shape[1] + self.actions_next
+            actions_next_flatten = self.actions_next + tf.range(
+                0, self.batch_size * self.step_size) * self.q_target.shape[1]
             max_q_next_target = tf.gather(tf.reshape(self.q_target, [-1]), actions_next_flatten)
         else:
             max_q_next_target = tf.reduce_max(self.q_target, axis=-1)
 
         y = self.rewards + (1. - self.done_flags) * self.gamma * max_q_next_target
 
+        self.learning_rate = tf.placeholder(tf.float32, shape=None, name='learning_rate')
         self.loss = tf.reduce_mean(tf.square(pred - tf.stop_gradient(y)), name="loss_mse_train")
         self.optimizer = tf.train.AdamOptimizer(
             self.learning_rate).minimize(self.loss, name="adam_optim")
@@ -232,9 +199,8 @@ class DqnPolicy(Policy, BaseTFModelMixin):
 
             self.ep_reward = tf.placeholder(tf.float32, name='episode_reward')
             self.ep_reward_summ = tf.summary.scalar('episode_reward', self.ep_reward)
-            self.merged_summary = tf.summary.merge([
-                self.q_y_summ, self.q_pred_summ, self.q_summ,
-                self.loss_summ, self.ep_reward_summ])
+
+            self.merged_summary = tf.summary.merge_all(key=tf.GraphKeys.SUMMARIES)
 
         self.sess.run(tf.global_variables_initializer())
         self._init_target_q_net()
@@ -246,21 +212,19 @@ class DqnPolicy(Policy, BaseTFModelMixin):
         else:
             self._update_target_q_net_soft(self.target_update_tau)
 
-    def act(self, state, epsilon=0.):
+    def act(self, state, epsilon=0.1):
         if self.training and np.random.random() < epsilon:
             return self.env.action_space.sample()
 
         with self.sess.as_default():
-            if self.q_model_type == 'lstm':
-                predicted_proba = self.q.eval({self.states: [
-                    [np.zeros(state.shape)] * (self.step_size - 1) + [state]
-                ]})[0][-1]
-                return max(range(self.act_size), key=lambda idx: predicted_proba[idx])
-
+            if self.model_type == 'lstm':
+                return self.actions_selected_by_q.eval({
+                    self.states: [np.zeros(state.shape)] * (self.step_size - 1) + [state]
+                })[-1]
             else:
-                return self.actions_selected_by_q.eval({self.states: [state]})[0]
+                return self.actions_selected_by_q.eval({self.states: [state]})[-1]
 
-    def train(self, n_episodes, annealing_episodes=None, every_episode=None):
+    def train(self, n_episodes=100, annealing_episodes=None, every_episode=None):
         reward = 0.
         reward_history = [0.0]
         reward_averaged = []
@@ -275,19 +239,15 @@ class DqnPolicy(Policy, BaseTFModelMixin):
         for n_episode in range(n_episodes):
             ob = self.env.reset()
             done = False
-            # traj_records = []
+            traj = []
 
             while not done:
-                a = self.act(ob, eps)
+                a = self.act(self.obs_to_inputs(ob), eps)
                 new_ob, r, done, info = self.env.step(a)
                 step += 1
                 reward += r
 
-                #traj_records.append(
-                #    (self.obs_to_inputs(ob), a, r, self.obs_to_inputs(new_ob), done)
-                #)
-                self.memory.add(Transition(ob, a, r, new_ob, done))
-
+                traj.append(Transition(self.obs_to_inputs(ob), a, r, self.obs_to_inputs(new_ob), done))
                 ob = new_ob
 
                 # No enough samples in the buffer yet.
@@ -319,8 +279,8 @@ class DqnPolicy(Policy, BaseTFModelMixin):
                 self.writer.add_summary(summ_str, step)
                 self.update_target_q_net(step)
 
-            ## Add all the (s, a, r, s', done) of one trajectory into the replay memory.
-            #self.memory.add(traj_records)
+            # Add all the transitions of one trajectory into the replay memory.
+            self.memory.add(traj)
 
             # One episode is complete.
             reward_history.append(reward)

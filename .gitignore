@@ -1,6 +1,7 @@
 .DS_Store
 .idea
 .pytest_cache
+__pycache__
 checkpoints/*
 logs/*
 figs/*

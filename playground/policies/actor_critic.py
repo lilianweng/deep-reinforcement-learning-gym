@@ -1,20 +1,11 @@
-"""
-The process is pretty straightforward:
+from collections import namedtuple
 
-1. Initialize the policy parameter θ at random.
-2. Generate one trajectory on policy πθ: S1,A1,R2,S2,A2,…,ST.
-3. For t = 1, 2, ... , T:
-    - Estimate the the return Gt;
-    - Update policy parameters: θ <-- θ + α γ**t (Gt - v(s_t)) ∇_θ ln π_θ(At|St)
-
-https://lilianweng.github.io/lil-log/2018/04/08/policy-gradient-algorithms.html#reinforce
-"""
 import numpy as np
 import tensorflow as tf
+
 from playground.policies.base import BaseTFModelMixin, Policy, ReplayMemory
 from playground.utils.misc import plot_learning_curve
-from playground.utils.tf_ops import mlp
-from collections import namedtuple
+from playground.utils.tf_ops import mlp_net
 
 Record = namedtuple('Record', ['s', 'a', 'r', 'td_target'])
 
@@ -23,42 +14,35 @@ class ActorCriticPolicy(Policy, BaseTFModelMixin):
     def __init__(self, env, name, training=True, gamma=0.9,
                  lr_a=0.02, lr_a_decay=0.995,
                  lr_c=0.01, lr_c_decay=0.995,
+                 epsilon=1.0,
+                 epsilon_final=0.05,
                  batch_size=32,
                  layer_sizes=None,
                  grad_clip_norm=None,
-                 deterministic=True):
-        Policy.__init__(self, env, name, training=training, gamma=gamma)
+                 **kwargs):
+        Policy.__init__(self, env, name, training=training, gamma=gamma, **kwargs)
         BaseTFModelMixin.__init__(self, name)
 
         self.lr_a = lr_a
         self.lr_a_decay = lr_a_decay
         self.lr_c = lr_c
         self.lr_c_decay = lr_c_decay
+        self.epsilon = epsilon
+        self.epsilon_final = epsilon_final
+
         self.batch_size = batch_size
         self.layer_sizes = [64] if layer_sizes is None else layer_sizes
         self.grad_clip_norm = grad_clip_norm
 
         self.memory = ReplayMemory(tuple_class=Record)
 
-        if deterministic:
-            np.random.seed(0)
-
     def act(self, state, epsilon=0.1):
         if self.training and np.random.random() < epsilon:
             return self.env.action_space.sample()
 
-        # Stochastic policy
-        with self.sess.as_default():
-            action_proba = self.actor_proba.eval({self.states: [state]})[0]
-            # print("action_proba =", action_proba)
-
-        return np.random.choice(self.act_size, p=action_proba)
-
-    def _scope_vars(self, scope):
-        vars = tf.get_collection(tf.GraphKeys.GLOBAL_VARIABLES, scope=scope)
-        assert len(vars) > 0
-        print("Variables in scope '%s'" % scope, vars)
-        return vars
+        # return self.sess.run(self.sampled_actions, {self.states: [state]})
+        proba = self.sess.run(self.actor_proba, {self.states: [state]})[0]
+        return max(range(self.act_size), key=lambda i: proba[i])
 
     @property
     def act_size(self):
@@ -82,16 +66,18 @@ class ActorCriticPolicy(Policy, BaseTFModelMixin):
         self.td_targets = tf.placeholder(tf.float32, shape=(None,), name='td_target')
 
         # Actor: action probabilities
-        self.actor = mlp(self.states, self.layer_sizes + [self.act_size], name='actor')
+        self.actor = mlp_net(self.states, self.layer_sizes + [self.act_size], name='actor')
+        self.sampled_actions = tf.squeeze(tf.multinomial(self.actor, 1))
         self.actor_proba = tf.nn.softmax(self.actor)
-        self.actor_vars = self._scope_vars('actor')
+        self.actor_vars = self.scope_vars('actor')
 
         # Critic: action value (Q-value)
-        self.critic = mlp(self.states, self.layer_sizes + [self.act_size], name='critic')
-        self.critic_vars = self._scope_vars('critic')
+        self.critic = mlp_net(self.states, self.layer_sizes + [1], name='critic')
+        self.critic_vars = self.scope_vars('critic')
 
         action_ohe = tf.one_hot(self.actions, self.act_size, 1.0, 0.0, name='action_one_hot')
-        self.pred_value = tf.reduce_sum(self.critic * action_ohe, reduction_indices=-1, name='q_acted')
+        self.pred_value = tf.reduce_sum(self.critic * action_ohe, reduction_indices=-1,
+                                        name='q_acted')
         # self.td_errors = self.td_targets - self.pred_value
         self.td_errors = self.td_targets - tf.reshape(self.pred_value, [-1])
 
@@ -123,9 +109,9 @@ class ActorCriticPolicy(Policy, BaseTFModelMixin):
 
         with tf.variable_scope('summary'):
             self.grads_a_summ = [tf.summary.scalar('grads/a_' + var.name, tf.norm(grad)) for
-                                 grad, var in self.grads_a]
+                                 grad, var in self.grads_a if grad is not None]
             self.grads_c_summ = [tf.summary.scalar('grads/c_' + var.name, tf.norm(grad)) for
-                                 grad, var in self.grads_c]
+                                 grad, var in self.grads_c if grad is not None]
             self.loss_c_summ = tf.summary.scalar('loss/critic', self.loss_c)
             self.loss_a_summ = tf.summary.scalar('loss/actor', self.loss_a)
 
@@ -138,7 +124,7 @@ class ActorCriticPolicy(Policy, BaseTFModelMixin):
 
         self.sess.run(tf.global_variables_initializer())
 
-    def train(self, n_episodes, annealing_episodes=None, every_episode=None):
+    def train(self, n_episodes, annealing_episodes=None, every_episode=None, done_rewards=None):
         step = 0
         episode_reward = 0.
         reward_history = []
@@ -147,20 +133,15 @@ class ActorCriticPolicy(Policy, BaseTFModelMixin):
         lr_c = self.lr_c
         lr_a = self.lr_a
 
-        eps = 1.0 # self.epsilon
+        eps = self.epsilon
         annealing_episodes = annealing_episodes or n_episodes
-        eps_drop = (eps - 0.01) / annealing_episodes
+        eps_drop = (eps - self.epsilon_final) / annealing_episodes
         print("eps_drop:", eps_drop)
 
         for n_episode in range(n_episodes):
             ob = self.env.reset()
-            a = self.act(ob, eps)
+            self.act(ob, eps)
             done = False
-
-            obs = []
-            actions = []
-            rewards = []
-            td_targets = []
 
             while not done:
                 a = self.act(ob, eps)
@@ -168,23 +149,16 @@ class ActorCriticPolicy(Policy, BaseTFModelMixin):
                 step += 1
                 episode_reward += r
 
-                obs.append(self.obs_to_inputs(ob))
-                actions.append(a)
-                rewards.append(r)
-
-                # a_next = self.act(ob_next)
                 if done:
-                    next_state_value = -100.
+                    next_state_value = done_rewards or 0.0
                 else:
                     with self.sess.as_default():
-                        next_state_value = max(self.critic.eval({self.states: [ob_next]})[0])
+                        next_state_value = self.critic.eval({
+                            self.states: [self.obs_to_inputs(ob_next)]})[0][0]
 
                 td_target = r + self.gamma * next_state_value
-                td_targets.append(td_target)
-
-                self.memory.add(Record(ob, a, r, td_target))
+                self.memory.add(Record(self.obs_to_inputs(ob), a, r, td_target))
                 ob = ob_next
-                # a = a_next
 
                 while self.memory.size >= self.batch_size:
                     batch = self.memory.pop(self.batch_size)
@@ -207,7 +181,8 @@ class ActorCriticPolicy(Policy, BaseTFModelMixin):
 
             lr_c *= self.lr_c_decay
             lr_a *= self.lr_a_decay
-            if eps > 0.01: eps -= eps_drop
+            if eps > self.epsilon_final:
+                eps -= eps_drop
 
             if reward_history and every_episode and n_episode % every_episode == 0:
                 # Report the performance every `every_step` steps

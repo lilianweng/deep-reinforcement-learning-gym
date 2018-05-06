@@ -13,7 +13,7 @@ import numpy as np
 import tensorflow as tf
 from playground.policies.base import BaseTFModelMixin, Policy
 from playground.utils.misc import plot_learning_curve
-from playground.utils.tf_ops import mlp
+from playground.utils.tf_ops import mlp_net
 
 
 class ReinforcePolicy(Policy, BaseTFModelMixin):
@@ -30,11 +30,7 @@ class ReinforcePolicy(Policy, BaseTFModelMixin):
         self.baseline = baseline
 
     def act(self, state, **kwargs):
-        # Stochastic policy
-        with self.sess.as_default():
-            action_proba = self.pi_proba.eval({self.states: [state]})[0]
-
-        return np.random.choice(self.act_size, p=action_proba)
+        return self.sess.run(self.sampled_actions, {self.states: [state]})
 
     def _scope_vars(self, scope):
         vars = tf.get_collection(tf.GraphKeys.GLOBAL_VARIABLES, scope=scope)
@@ -62,21 +58,21 @@ class ReinforcePolicy(Policy, BaseTFModelMixin):
         self.returns = tf.placeholder(tf.float32, shape=(None,), name='return')
 
         # Build network
-        self.pi = mlp(self.states, self.layer_sizes + [self.act_size], name='pi_network')
-        self.pi_proba = tf.nn.softmax(self.pi)
+        self.pi = mlp_net(self.states, self.layer_sizes + [self.act_size], name='pi_network')
+        self.sampled_actions = tf.squeeze(tf.multinomial(self.pi, 1))
         self.pi_vars = self._scope_vars('pi_network')
 
         if self.baseline:
             # State value estimation as the baseline
-            self.v = mlp(self.states, self.layer_sizes + [1], name='v_network')
+            self.v = mlp_net(self.states, self.layer_sizes + [1], name='v_network')
             self.v_vars = self._scope_vars('v_network')
             self.target = self.returns - self.v  # advantage
 
             with tf.variable_scope('v_optimize'):
                 self.loss_v = tf.reduce_mean(tf.squared_difference(self.v, self.returns))
-                self.grads_v = tf.gradients(self.loss_v, self.v_vars)
                 self.optim_v = tf.train.AdamOptimizer(self.lr)
-                self.train_v_op = self.optim_v.apply_gradients(zip(self.grads_v, self.v_vars))
+                self.grads_v = self.optim_v.compute_gradients(self.loss_v, self.v_vars)
+                self.train_v_op = self.optim_v.apply_gradients(self.grads_v)
         else:
             self.target = tf.identity(self.returns)
 
@@ -84,9 +80,9 @@ class ReinforcePolicy(Policy, BaseTFModelMixin):
             self.loss_pi = tf.reduce_mean(
                 self.target * tf.nn.sparse_softmax_cross_entropy_with_logits(
                     logits=self.pi, labels=self.actions), name='loss_pi')
-            self.grads_pi = tf.gradients(self.loss_pi, self.pi_vars)
             self.optim_pi = tf.train.AdamOptimizer(self.lr)
-            self.train_pi_op = self.optim_pi.apply_gradients(zip(self.grads_pi, self.pi_vars))
+            self.grads_pi = self.optim_pi.compute_gradients(self.loss_pi, self.pi_vars)
+            self.train_pi_op = self.optim_pi.apply_gradients(self.grads_pi)
 
         with tf.variable_scope('summary'):
             self.loss_pi_summ = tf.summary.scalar('loss_pi', self.loss_pi)

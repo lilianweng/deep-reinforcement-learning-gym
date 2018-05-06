@@ -6,7 +6,7 @@ from gym.spaces import Box, Discrete
 
 from playground.policies.base import BaseTFModelMixin, Policy
 from playground.utils.misc import plot_learning_curve
-from playground.utils.tf_ops import mlp, conv2d_net
+from playground.utils.tf_ops import mlp_net, conv2d_net
 
 
 class ReplayMemory(object):
@@ -139,8 +139,8 @@ class DqnPolicy(Policy, BaseTFModelMixin):
             # The output is a probability distribution over all the actions.
             # layers_sizes = [256, 128, 64] + [self.act_size]
             layers_sizes = self.q_model_params.get('layer_sizes', [256, 128, 64])
-            self.q = mlp(self.states, layers_sizes + [self.act_size], name='Q_main')
-            self.q_target = mlp(self.states_next, layers_sizes + [self.act_size], name='Q_target')
+            self.q = mlp_net(self.states, layers_sizes + [self.act_size], name='Q_main')
+            self.q_target = mlp_net(self.states_next, layers_sizes + [self.act_size], name='Q_target')
 
         elif self.q_model_type == 'cnn':
             self.q = conv2d_net(self.states, self.act_size, name='Q_main')

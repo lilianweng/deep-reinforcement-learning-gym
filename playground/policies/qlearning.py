@@ -1,12 +1,10 @@
-from collections import defaultdict, deque
+from collections import defaultdict
 
 import numpy as np
-import tensorflow as tf
-from gym.spaces import Box, Discrete
+from gym.spaces import Discrete
 
-from playground.policies.base import BaseTFModelMixin, Policy
+from playground.policies.base import Policy, Transition
 from playground.utils.misc import plot_learning_curve
-from playground.utils.tf_ops import mlp
 
 
 class QlearningPolicy(Policy):
@@ -15,10 +13,13 @@ class QlearningPolicy(Policy):
                  gamma=0.99,
                  alpha=0.5,
                  alpha_decay=1.0,
-                 epsilon=0.05,
-                 epsilon_decay=1.0,
+                 epsilon=1.0,
+                 epsilon_final=0.01,
                  Q=None):
         """
+        This Q-learning implementation only works on an environment with discrete
+        action and observation space. We use a dict to memorize the Q-value.
+
         1. We start from state s and
 
         2.  At state s, with action a, we observe a reward r(s, a) and get into the
@@ -35,7 +36,7 @@ class QlearningPolicy(Policy):
         self.alpha = alpha
         self.alpha_decay = alpha_decay
         self.epsilon = epsilon
-        self.epsilon_decay = epsilon_decay
+        self.epsilon_final = epsilon_final
 
         self.Q = Q
         self.actions = range(self.env.action_space.n)
@@ -43,12 +44,11 @@ class QlearningPolicy(Policy):
     def build(self):
         self.Q = defaultdict(float)
 
-    def act(self, state, epsilon):
-        """Normally pick action according to Q values ~ argmax_a Q(s, a).
+    def act(self, state, epsilon=0.1):
+        """Pick best action according to Q values ~ argmax_a Q(s, a).
         Exploration is forced by epsilon-greedy.
         """
-        if self.training and np.random.rand() < epsilon:
-            # Let's explore!
+        if self.training and epsilon > 0. and np.random.rand() < epsilon:
             return self.env.action_space.sample()
 
         # Pick the action with highest Q value.
@@ -57,62 +57,59 @@ class QlearningPolicy(Policy):
         actions_with_max_q = [a for a, q in qvals.items() if q == max_q]
         return np.random.choice(actions_with_max_q)
 
-    def _update_q_value(self, s, a, r, s_next):
+    def _update_q_value(self, tr):
         """
         Q(s, a) += alpha * (r(s, a) + gamma * max Q(s', .) - Q(s, a))
         """
-        max_q_next = max([self.Q[s_next, a] for a in self.actions])
-        self.Q[s, a] += self.alpha * (r + self.gamma * max_q_next - self.Q[s, a])
+        max_q_next = max([self.Q[tr.s_next, a] for a in self.actions])
+        self.Q[tr.s, tr.a] += self.alpha * (
+            tr.r + self.gamma * max_q_next * (1.0 - tr.done) - self.Q[tr.s, tr.a]
+        )
 
-    def train(self, n_steps, done_reward=None, every_step=None, with_monitor=False):
-        alpha_history = []
-        eps_history = []
+    def train(self, n_episodes=100, annealing_episodes=None, done_reward=None, every_episode=None):
         reward_history = []
         reward_averaged = []
-        reward = 0
-
-        ob = self.env.reset()
+        step = 0
         alpha = self.alpha
         eps = self.epsilon
 
-        for step in range(n_steps):
-            a = self.act(ob, eps)
-            new_ob, r, done, info = self.env.step(a)
-            reward += r
+        annealing_episodes = annealing_episodes or n_episodes
+        eps_drop = (self.epsilon - self.epsilon_final) / annealing_episodes
 
-            if done:
-                if done_reward is None:
-                    done_reward = r
+        for n_episode in range(n_episodes):
+            ob = self.env.reset()
+            done = False
+            reward = 0.
 
-                self._update_q_value(ob, a, done_reward, new_ob)
-                ob = self.env.reset()
+            while not done:
+                a = self.act(ob, eps)
+                new_ob, r, done, info = self.env.step(a)
+                if done and done_reward is not None:
+                    r = done_reward
 
-                reward_history.append(reward)
-                reward = 0
-                alpha *= self.alpha_decay
-                eps *= self.epsilon_decay
-                # print(step, '-', self.alpha, self.epsilon)
+                self._update_q_value(Transition(ob, a, r, new_ob, done))
 
-            else:
-                self._update_q_value(ob, a, r, new_ob)
+                step += 1
+                reward += r
                 ob = new_ob
 
-            reward_averaged.append(np.mean(reward_history[-20:]) if reward_history else None)
-            alpha_history.append(alpha)
-            eps_history.append(eps)
+            reward_history.append(reward)
+            reward_averaged.append(np.average(reward_history[-50:]))
 
-            if len(reward_history) > 0 and every_step is not None and step % every_step == 0:
+            alpha *= self.alpha_decay
+            if eps > self.epsilon_final:
+                eps -= eps_drop
+
+            if every_episode is not None and n_episode % every_episode == 0:
                 # Report the performance every 100 steps
-                print("[step:{}] episodes: {}, best: {}, avg: {}, Q.size: {}".format(
-                    step, len(reward_history), np.max(reward_history),
-                    np.mean(reward_history[-20:]), len(self.Q)))
+                print("[episode:{}|step:{}] best:{} avg:{:.4f}|{} alpha:{:.4f} eps:{:.4f} Qsize:{}".format(
+                    n_episode, step, np.max(reward_history),
+                    np.mean(reward_history[-10:]), reward_history[-5:],
+                    alpha, eps, len(self.Q)))
 
         print("[FINAL] Num. episodes: {}, Max reward: {}, Average reward: {}".format(
             len(reward_history), np.max(reward_history), np.mean(reward_history)))
 
-        data_dict = {
-            'alpha': alpha_history,
-            'epsilon': eps_history,
-            'reward_averaged': reward_averaged,
-        }
-        plot_learning_curve(n_steps, self.name, data_dict)
+        plot_learning_curve(self.name,
+                            {'reward': reward_history, 'reward_avg50': reward_averaged},
+                            xlabel='episode')
