@@ -1,13 +1,17 @@
-from collections import deque
-
 import numpy as np
 import tensorflow as tf
 from gym.spaces import Box, Discrete
 
-from playground.policies.base import BaseTFModelMixin, Policy, ReplayMemory, ReplayTrajMemory, Transition
+from playground.policies.base import (
+    BaseTFModelMixin,
+    Policy,
+    ReplayMemory,
+    ReplayTrajMemory,
+    Transition,
+)
 from playground.utils.misc import plot_learning_curve
 from playground.utils.tf_ops import mlp_net, conv2d_net, lstm_net
-from playground.utils.wrappers import DiscretizeActionWrapper
+
 
 class DqnPolicy(Policy, BaseTFModelMixin):
     def __init__(self, env, name,
@@ -72,13 +76,10 @@ class DqnPolicy(Policy, BaseTFModelMixin):
     @property
     def obs_size(self):
         # Returns: A list
-        sample = self.env.observation_space.sample()
         if self.model_type == 'mlp':
-            return [sample.flatten().shape[0]]
-        elif self.model_type == 'conv':
-            return list(sample.shape)
-        elif self.model_type == 'lstm':
-            return list(sample.shape)
+            return [np.prod(list(self.env.observation_space.shape))]
+        elif self.model_type in ('conv', 'lstm'):
+            return list(self.env.observation_space.shape)
         else:
             assert NotImplementedError()
 
@@ -124,7 +125,8 @@ class DqnPolicy(Policy, BaseTFModelMixin):
     def create_q_networks(self):
         # The first dimension should have batch_size * step_size
         self.states = tf.placeholder(tf.float32, shape=(None, *self.obs_size), name='state')
-        self.states_next = tf.placeholder(tf.float32, shape=(None, *self.obs_size), name='state_next')
+        self.states_next = tf.placeholder(tf.float32, shape=(None, *self.obs_size),
+                                          name='state_next')
         self.actions = tf.placeholder(tf.int32, shape=(None,), name='action')
         self.actions_next = tf.placeholder(tf.int32, shape=(None,), name='action_next')
         self.rewards = tf.placeholder(tf.float32, shape=(None,), name='reward')
@@ -136,25 +138,32 @@ class DqnPolicy(Policy, BaseTFModelMixin):
         net_class, net_params = self._extract_network_params()
 
         if self.dueling:
-            self.q_hidden = net_class(self.states, layers_sizes[:-1], name='Q_primary', **net_params)
-            self.adv = mlp_net(self.q_hidden, layers_sizes[-1:] + [self.act_size], name='Q_primary_adv')
+            self.q_hidden = net_class(self.states, layers_sizes[:-1], name='Q_primary',
+                                      **net_params)
+            self.adv = mlp_net(self.q_hidden, layers_sizes[-1:] + [self.act_size],
+                               name='Q_primary_adv')
             self.v = mlp_net(self.q_hidden, layers_sizes[-1:] + [1], name='Q_primary_v')
 
             # Average Dueling
             self.q = self.v + (self.adv - tf.reduce_mean(
                 self.adv, reduction_indices=1, keep_dims=True))
 
-            self.q_target_hidden = net_class(self.states_next, layers_sizes[:-1], name='Q_target', **net_params)
-            self.adv_target = mlp_net(self.q_target_hidden, layers_sizes[-1:] + [self.act_size], name='Q_target_adv')
-            self.v_target = mlp_net(self.q_target_hidden, layers_sizes[-1:] + [1], name='Q_target_v')
+            self.q_target_hidden = net_class(self.states_next, layers_sizes[:-1], name='Q_target',
+                                             **net_params)
+            self.adv_target = mlp_net(self.q_target_hidden, layers_sizes[-1:] + [self.act_size],
+                                      name='Q_target_adv')
+            self.v_target = mlp_net(self.q_target_hidden, layers_sizes[-1:] + [1],
+                                    name='Q_target_v')
 
             # Average Dueling
             self.q_target = self.v_target + (self.adv_target - tf.reduce_mean(
                 self.adv_target, reduction_indices=1, keep_dims=True))
 
         else:
-            self.q = net_class(self.states, layers_sizes + [self.act_size], name='Q_primary', **net_params)
-            self.q_target = net_class(self.states_next, layers_sizes + [self.act_size], name='Q_target', **net_params)
+            self.q = net_class(self.states, layers_sizes + [self.act_size], name='Q_primary',
+                               **net_params)
+            self.q_target = net_class(self.states_next, layers_sizes + [self.act_size],
+                                      name='Q_target', **net_params)
 
         # The primary and target Q networks should match.
         self.q_vars = self.scope_vars('Q_primary')
@@ -243,7 +252,8 @@ class DqnPolicy(Policy, BaseTFModelMixin):
                 step += 1
                 reward += r
 
-                traj.append(Transition(self.obs_to_inputs(ob), a, r, self.obs_to_inputs(new_ob), done))
+                traj.append(
+                    Transition(self.obs_to_inputs(ob), a, r, self.obs_to_inputs(new_ob), done))
                 ob = new_ob
 
                 # No enough samples in the buffer yet.
@@ -253,14 +263,14 @@ class DqnPolicy(Policy, BaseTFModelMixin):
                 # Training with a mini batch of samples!
                 batch_data = self.memory.sample(self.batch_size)
                 feed_dict = {
-                        self.learning_rate: lr,
-                        self.states: batch_data['s'],
-                        self.actions: batch_data['a'],
-                        self.rewards: batch_data['r'],
-                        self.states_next: batch_data['s_next'],
-                        self.done_flags: batch_data['done'],
-                        self.ep_reward: reward_history[-1],
-                    }
+                    self.learning_rate: lr,
+                    self.states: batch_data['s'],
+                    self.actions: batch_data['a'],
+                    self.rewards: batch_data['r'],
+                    self.states_next: batch_data['s_next'],
+                    self.done_flags: batch_data['done'],
+                    self.ep_reward: reward_history[-1],
+                }
 
                 if self.double_q:
                     actions_next = self.sess.run(self.actions_selected_by_q, {
@@ -290,11 +300,12 @@ class DqnPolicy(Policy, BaseTFModelMixin):
 
             if reward_history and every_episode and n_episode % every_episode == 0:
                 # Report the performance every `every_step` steps
-                print("[episodes:{}/step:{}], best:{}, avg:{:.2f}:{}, lr:{:.4f}, eps:{:.4f}".format(
-                    n_episode, step, np.max(reward_history),
-                    np.mean(reward_history[-10:]), reward_history[-5:],
-                    lr, eps, self.memory.size
-                ))
+                print(
+                    "[episodes:{}/step:{}], best:{}, avg:{:.2f}:{}, lr:{:.4f}, eps:{:.4f}".format(
+                        n_episode, step, np.max(reward_history),
+                        np.mean(reward_history[-10:]), reward_history[-5:],
+                        lr, eps, self.memory.size
+                    ))
                 # self.save_model(step=step)
 
         self.save_model(step=step)
@@ -307,4 +318,3 @@ class DqnPolicy(Policy, BaseTFModelMixin):
             'reward_smooth10': reward_averaged,
         }
         plot_learning_curve(self.model_name, data_dict, xlabel='episode')
-
