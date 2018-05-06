@@ -33,11 +33,7 @@ class DqnPolicy(Policy, BaseTFModelMixin):
         Policy.__init__(self, env, name, gamma=gamma, training=training)
         BaseTFModelMixin.__init__(self, name, saver_max_to_keep=5)
 
-        if isinstance(self.env.action_space, Box):
-            self.env = DiscretizeActionWrapper(self.env, n_bins=10)
-        else:
-            assert isinstance(self.env.action_space, Discrete)
-
+        assert isinstance(self.env.action_space, Discrete)
         assert isinstance(self.env.observation_space, Box)
         assert model_type in ('mlp', 'conv', 'lstm')
         assert step_size == 1 or model_type == 'lstm'
