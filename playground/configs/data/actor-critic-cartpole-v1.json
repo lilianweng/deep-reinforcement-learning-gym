@@ -3,9 +3,9 @@
     "policy_name": "ActorCriticPolicy",
     "policy_params": {
         "lr_a": 0.02,
-        "lr_a_decay": 0.998,
+        "lr_a_decay": 0.997,
         "lr_c": 0.01,
-        "lr_c_decay": 0.998,
+        "lr_c_decay": 0.997,
         "epsilon": 1.0,
         "epsilon_final": 0.05,
         "batch_size": 16,
