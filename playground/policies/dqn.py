@@ -24,9 +24,9 @@ class DqnPolicy(Policy, BaseTFModelMixin):
                  batch_size=64,
                  memory_capacity=100000,
                  model_type='mlp',
+                 model_params=None,
                  step_size=1,  # only > 1 if model_type is 'lstm'.
                  layer_sizes=None,  # [64] by default.
-                 model_params=None,
                  target_update_type='hard',
                  target_update_params=None,
                  double_q=True,
@@ -52,7 +52,7 @@ class DqnPolicy(Policy, BaseTFModelMixin):
 
         self.model_type = model_type
         self.model_params = model_params or {}
-        self.layer_sizes = layer_sizes or [64]
+        self.layer_sizes = layer_sizes or [32, 32]
         self.step_size = step_size
         self.double_q = double_q
         self.dueling = dueling
@@ -133,26 +133,25 @@ class DqnPolicy(Policy, BaseTFModelMixin):
         self.done_flags = tf.placeholder(tf.float32, shape=(None,), name='done')
 
         # The output is a probability distribution over all the actions.
-        layers_sizes = self.model_params.get('layer_sizes', [32, 32])
 
         net_class, net_params = self._extract_network_params()
 
         if self.dueling:
-            self.q_hidden = net_class(self.states, layers_sizes[:-1], name='Q_primary',
+            self.q_hidden = net_class(self.states, self.layer_sizes[:-1], name='Q_primary',
                                       **net_params)
-            self.adv = mlp_net(self.q_hidden, layers_sizes[-1:] + [self.act_size],
+            self.adv = mlp_net(self.q_hidden, self.layer_sizes[-1:] + [self.act_size],
                                name='Q_primary_adv')
-            self.v = mlp_net(self.q_hidden, layers_sizes[-1:] + [1], name='Q_primary_v')
+            self.v = mlp_net(self.q_hidden, self.layer_sizes[-1:] + [1], name='Q_primary_v')
 
             # Average Dueling
             self.q = self.v + (self.adv - tf.reduce_mean(
                 self.adv, reduction_indices=1, keep_dims=True))
 
-            self.q_target_hidden = net_class(self.states_next, layers_sizes[:-1], name='Q_target',
+            self.q_target_hidden = net_class(self.states_next, self.layer_sizes[:-1], name='Q_target',
                                              **net_params)
-            self.adv_target = mlp_net(self.q_target_hidden, layers_sizes[-1:] + [self.act_size],
+            self.adv_target = mlp_net(self.q_target_hidden, self.layer_sizes[-1:] + [self.act_size],
                                       name='Q_target_adv')
-            self.v_target = mlp_net(self.q_target_hidden, layers_sizes[-1:] + [1],
+            self.v_target = mlp_net(self.q_target_hidden, self.layer_sizes[-1:] + [1],
                                     name='Q_target_v')
 
             # Average Dueling
@@ -160,9 +159,9 @@ class DqnPolicy(Policy, BaseTFModelMixin):
                 self.adv_target, reduction_indices=1, keep_dims=True))
 
         else:
-            self.q = net_class(self.states, layers_sizes + [self.act_size], name='Q_primary',
+            self.q = net_class(self.states, self.layer_sizes + [self.act_size], name='Q_primary',
                                **net_params)
-            self.q_target = net_class(self.states_next, layers_sizes + [self.act_size],
+            self.q_target = net_class(self.states_next, self.layer_sizes + [self.act_size],
                                       name='Q_target', **net_params)
 
         # The primary and target Q networks should match.

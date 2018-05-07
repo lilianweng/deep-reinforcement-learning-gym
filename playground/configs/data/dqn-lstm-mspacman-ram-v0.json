@@ -1,5 +1,5 @@
 {
-    "env_name": "CartPole-v1",
+    "env_name": "MsPacman-ram-v0",
     "policy_name": "DqnPolicy",
     "policy_params": {
         "batch_size": 32,
@@ -8,11 +8,15 @@
         "epsilon": 1.0,
         "epsilon_final": 0.02,
         "layer_sizes": [
-            32,
-            32
+            128,
+            128
         ],
         "lr": 0.001,
         "model_type": "lstm",
+        "model_params": {
+            "lstm_layers": 1,
+            "lstm_size": 256
+        },
         "step_size": 16,
         "target_update_type": "hard"
     },
