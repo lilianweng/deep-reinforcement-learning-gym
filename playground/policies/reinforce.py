@@ -32,12 +32,6 @@ class ReinforcePolicy(Policy, BaseTFModelMixin):
     def act(self, state, **kwargs):
         return self.sess.run(self.sampled_actions, {self.states: [state]})
 
-    def _scope_vars(self, scope):
-        vars = tf.get_collection(tf.GraphKeys.GLOBAL_VARIABLES, scope=scope)
-        assert len(vars) > 0
-        print("Variables in scope '%s'" % scope, vars)
-        return vars
-
     @property
     def act_size(self):
         return self.env.action_space.n
@@ -60,12 +54,12 @@ class ReinforcePolicy(Policy, BaseTFModelMixin):
         # Build network
         self.pi = mlp_net(self.states, self.layer_sizes + [self.act_size], name='pi_network')
         self.sampled_actions = tf.squeeze(tf.multinomial(self.pi, 1))
-        self.pi_vars = self._scope_vars('pi_network')
+        self.pi_vars = self.scope_vars('pi_network')
 
         if self.baseline:
             # State value estimation as the baseline
             self.v = mlp_net(self.states, self.layer_sizes + [1], name='v_network')
-            self.v_vars = self._scope_vars('v_network')
+            self.v_vars = self.scope_vars('v_network')
             self.target = self.returns - self.v  # advantage
 
             with tf.variable_scope('v_optimize'):

@@ -140,10 +140,6 @@ class BaseTFModelMixin:
         self._model_name = model_name
         self._sess = None
 
-        # for attr in self._attrs:
-        #    name = attr if not attr.startswith('_') else attr[1:]
-        #    setattr(self, name, getattr(self.config, attr))
-
     def scope_vars(self, scope):
         res = tf.get_collection(tf.GraphKeys.GLOBAL_VARIABLES, scope=scope)
         assert len(res) > 0
