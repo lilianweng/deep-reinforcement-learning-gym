@@ -3,6 +3,21 @@ import numpy as np
 from gym.utils import colorize
 
 
+def dense_nn(inputs, layers_sizes, scope_name):
+    with tf.variable_scope(scope_name):
+        for i, size in enumerate(layers_sizes):
+            inputs = tf.layers.dense(
+                inputs,
+                size,
+                # Add relu activation only for internal layers.
+                activation=tf.nn.relu if i < len(layers_sizes) - 1 else None,
+                kernel_initializer=tf.contrib.layers.xavier_initializer(),
+                name=scope_name + '_l' + str(i)
+            )
+
+    return inputs
+
+
 def mlp_net(inputs, layers_sizes, name="mlp", reuse=None, dropout_keep_prob=None,
             batch_norm=False, training=True):
     print(colorize("Building mlp {} | sizes: {}".format(

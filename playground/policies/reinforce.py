@@ -92,9 +92,9 @@ class ReinforcePolicy(Policy, BaseTFModelMixin):
             self.merged_summary = tf.summary.merge(summ_list)
 
         if self.baseline:
-            self.train_ops = [self.train_pi_op]
-        else:
             self.train_ops = [self.train_pi_op, self.train_v_op]
+        else:
+            self.train_ops = [self.train_pi_op]
 
         self.sess.run(tf.global_variables_initializer())
 

@@ -54,6 +54,8 @@ class QlearningPolicy(Policy):
         # Pick the action with highest Q value.
         qvals = {a: self.Q[state, a] for a in self.actions}
         max_q = max(qvals.values())
+
+        # In case multiple actions have the same maximum Q value.
         actions_with_max_q = [a for a, q in qvals.items() if q == max_q]
         return np.random.choice(actions_with_max_q)
 
@@ -62,6 +64,7 @@ class QlearningPolicy(Policy):
         Q(s, a) += alpha * (r(s, a) + gamma * max Q(s', .) - Q(s, a))
         """
         max_q_next = max([self.Q[tr.s_next, a] for a in self.actions])
+        # We do not include the value of the next state if terminated.
         self.Q[tr.s, tr.a] += self.alpha * (
             tr.r + self.gamma * max_q_next * (1.0 - tr.done) - self.Q[tr.s, tr.a]
         )

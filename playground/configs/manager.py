@@ -12,18 +12,35 @@ def load_policy_class(policy_name):
     return policy_class
 
 
-class ConfigManager:
-    def __init__(self, env_name, policy_name, policy_params=None, train_params=None):
-        self.env_name = env_name
-        self.env = gym.make(self.env_name)
+def load_wrapper_class(wrapper_name):
+    mod = importlib.import_module("playground.utils.wrappers")
+    wrapper_class = getattr(mod, wrapper_name)
+    return wrapper_class
 
+
+def apply_wrappers(env, list_of_wrappers):
+    for name, params in list_of_wrappers:
+        wrapper_class = load_wrapper_class(name)
+        env = wrapper_class(env, **params)
+    return env
+
+
+class ConfigManager:
+    def __init__(self, env_name, policy_name, policy_params=None, train_params=None,
+                 wrappers=None):
+        self.env_name = env_name
         self.policy_name = policy_name
         self.policy_params = policy_params or {}
         self.train_params = train_params or {}
+        self.wrappers = wrappers or []
+
+        self.env = gym.make(self.env_name)
+        self.env = apply_wrappers(self.env, self.wrappers)
 
     def to_json(self):
         return dict(
             env_name=self.env_name,
+            wrappers=self.wrappers,
             policy_name=self.policy_name,
             policy_params=self.policy_params,
             train_params=self.train_params,
@@ -46,6 +63,7 @@ class ConfigManager:
 
         print("\n==================================================")
         print("Loaded gym.env:", self.env_name)
+        print("Wrappers:", self.wrappers)
         print("Loaded policy:", policy.__class__)
         print("Policy params:", self.policy_params)
         print("Train params:", self.train_params)
