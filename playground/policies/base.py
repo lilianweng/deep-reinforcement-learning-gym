@@ -1,10 +1,10 @@
 import os
-import time
-from collections import namedtuple
+from collections import deque, namedtuple
+
 import numpy as np
 import tensorflow as tf
 from gym.utils import colorize
-from collections import deque
+
 from playground.utils.misc import REPO_ROOT
 
 Transition = namedtuple('Transition', ['s', 'a', 'r', 's_next', 'done'])

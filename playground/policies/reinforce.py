@@ -1,14 +1,3 @@
-"""
-The process is pretty straightforward:
-
-1. Initialize the policy parameter θ at random.
-2. Generate one trajectory on policy πθ: S1,A1,R2,S2,A2,…,ST.
-3. For t = 1, 2, ... , T:
-    - Estimate the the return Gt;
-    - Update policy parameters: θ <-- θ + α γ**t (Gt - v(s_t)) ∇_θ ln π_θ(At|St)
-
-https://lilianweng.github.io/lil-log/2018/04/08/policy-gradient-algorithms.html#reinforce
-"""
 import numpy as np
 import tensorflow as tf
 from playground.policies.base import BaseTFModelMixin, Policy

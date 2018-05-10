@@ -78,7 +78,6 @@ class ActorCriticPolicy(Policy, BaseTFModelMixin):
         action_ohe = tf.one_hot(self.actions, self.act_size, 1.0, 0.0, name='action_one_hot')
         self.pred_value = tf.reduce_sum(self.critic * action_ohe, reduction_indices=-1,
                                         name='q_acted')
-        # self.td_errors = self.td_targets - self.pred_value
         self.td_errors = self.td_targets - tf.reshape(self.pred_value, [-1])
 
         with tf.variable_scope('critic_train'):
