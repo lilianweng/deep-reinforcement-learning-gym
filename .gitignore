@@ -5,6 +5,5 @@ __pycache__
 checkpoints/*
 logs/*
 figs/*
-**/*.png
 **/*.pyc
 **/*.egg-info

@@ -1,5 +1,10 @@
 ## Common Deep Reinforcement Learning Models (Tensorflow + OpenAI Gym)
 
+In this repo, I implemented several classic deep reinforcement learning models in Tensorflow and OpenAI gym environment. Please check the corresponding blog post: ["Implementing Deep Reinforcement Learning Models"](http://lilianweng.github.io/lil-log/2018/05/05/implementing-deep-reinforcement-learning-models.html) for more information.
+
+I will add more model implementation in the future.
+
+
 ### Setup
 
 (1) Make sure you have [Homebrew](https://docs.brew.sh/Installation) installed:
