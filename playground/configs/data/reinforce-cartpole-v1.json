@@ -13,6 +13,6 @@
     },
     "train_params": {
         "every_episode": 10,
-        "n_episodes": 1200
+        "n_episodes": 800
     }
 }

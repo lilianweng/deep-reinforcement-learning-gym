@@ -3,23 +3,8 @@ import numpy as np
 from gym.utils import colorize
 
 
-def dense_nn(inputs, layers_sizes, scope_name):
-    with tf.variable_scope(scope_name):
-        for i, size in enumerate(layers_sizes):
-            inputs = tf.layers.dense(
-                inputs,
-                size,
-                # Add relu activation only for internal layers.
-                activation=tf.nn.relu if i < len(layers_sizes) - 1 else None,
-                kernel_initializer=tf.contrib.layers.xavier_initializer(),
-                name=scope_name + '_l' + str(i)
-            )
-
-    return inputs
-
-
-def mlp_net(inputs, layers_sizes, name="mlp", reuse=None, dropout_keep_prob=None,
-            batch_norm=False, training=True):
+def dense_nn(inputs, layers_sizes, name="mlp", reuse=None, dropout_keep_prob=None,
+             batch_norm=False, training=True):
     print(colorize("Building mlp {} | sizes: {}".format(
         name, [inputs.shape[0]] + layers_sizes), "green"))
 
@@ -74,7 +59,7 @@ def conv2d_net(inputs, layers_sizes, name="conv2d", conv_layers=2, with_pooling=
                 print('pool' + str(i) + '.shape =', inputs.shape)
 
         flatten = tf.reshape(inputs, [-1, np.prod(inputs.shape.as_list()[1:])], name='flatten')
-        outputs = mlp_net(flatten, layers_sizes, name='fc', dropout_keep_prob=dropout_keep_prob)
+        outputs = dense_nn(flatten, layers_sizes, name='fc', dropout_keep_prob=dropout_keep_prob)
 
         print("flatten.shape =", flatten.shape)
         print("outputs.shape =", outputs.shape)
@@ -139,7 +124,7 @@ def lstm_net(inputs, layers_sizes, name='lstm', step_size=16, lstm_layers=1, lst
     with tf.variable_scope(name):
 
         if pre_lstm_dense_layer:
-            inputs = tf.nn.relu(mlp_net(inputs, [pre_lstm_dense_layer], name='pre_lstm'))
+            inputs = tf.nn.relu(dense_nn(inputs, [pre_lstm_dense_layer], name='pre_lstm'))
 
         with tf.variable_scope('lstm_cells'):
             # Before transpose, inputs.get_shape() = (batch_size, num_steps, lstm_size)
@@ -157,7 +142,7 @@ def lstm_net(inputs, layers_sizes, name='lstm', step_size=16, lstm_layers=1, lst
             print("lstm_states =", lstm_states)
             print("lstm_outputs.shape =", lstm_outputs.shape)
 
-        outputs = mlp_net(lstm_outputs, layers_sizes, name="outputs")
+        outputs = dense_nn(lstm_outputs, layers_sizes, name="outputs")
         print("outputs.shape =", outputs.shape)
 
         outputs = tf.reshape(outputs, [-1, layers_sizes[-1]])

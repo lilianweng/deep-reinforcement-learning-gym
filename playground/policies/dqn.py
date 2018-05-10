@@ -10,7 +10,7 @@ from playground.policies.base import (
     Transition,
 )
 from playground.utils.misc import plot_learning_curve
-from playground.utils.tf_ops import mlp_net, conv2d_net, lstm_net
+from playground.utils.tf_ops import dense_nn, conv2d_net, lstm_net
 
 
 class DqnPolicy(Policy, BaseTFModelMixin):
@@ -23,7 +23,7 @@ class DqnPolicy(Policy, BaseTFModelMixin):
                  epsilon_final=0.01,
                  batch_size=64,
                  memory_capacity=100000,
-                 model_type='mlp',
+                 model_type='dense',
                  model_params=None,
                  step_size=1,  # only > 1 if model_type is 'lstm'.
                  layer_sizes=None,  # [64] by default.
@@ -39,7 +39,7 @@ class DqnPolicy(Policy, BaseTFModelMixin):
 
         assert isinstance(self.env.action_space, Discrete)
         assert isinstance(self.env.observation_space, Box)
-        assert model_type in ('mlp', 'conv', 'lstm')
+        assert model_type in ('dense', 'conv', 'lstm')
         assert step_size == 1 or model_type == 'lstm'
         assert target_update_type in ('hard', 'soft')
 
@@ -76,7 +76,7 @@ class DqnPolicy(Policy, BaseTFModelMixin):
     @property
     def obs_size(self):
         # Returns: A list
-        if self.model_type == 'mlp':
+        if self.model_type == 'dense':
             return [np.prod(list(self.env.observation_space.shape))]
         elif self.model_type in ('conv', 'lstm'):
             return list(self.env.observation_space.shape)
@@ -84,7 +84,7 @@ class DqnPolicy(Policy, BaseTFModelMixin):
             assert NotImplementedError()
 
     def obs_to_inputs(self, ob):
-        if self.model_type == 'mlp':
+        if self.model_type == 'dense':
             return ob.flatten()
         elif self.model_type == 'conv':
             return ob
@@ -106,8 +106,8 @@ class DqnPolicy(Policy, BaseTFModelMixin):
     def _extract_network_params(self):
         net_params = {}
 
-        if self.model_type == 'mlp':
-            net_class = mlp_net
+        if self.model_type == 'dense':
+            net_class = dense_nn
         elif self.model_type == 'conv':
             net_class = conv2d_net
         elif self.model_type == 'lstm':
@@ -139,9 +139,9 @@ class DqnPolicy(Policy, BaseTFModelMixin):
         if self.dueling:
             self.q_hidden = net_class(self.states, self.layer_sizes[:-1], name='Q_primary',
                                       **net_params)
-            self.adv = mlp_net(self.q_hidden, self.layer_sizes[-1:] + [self.act_size],
-                               name='Q_primary_adv')
-            self.v = mlp_net(self.q_hidden, self.layer_sizes[-1:] + [1], name='Q_primary_v')
+            self.adv = dense_nn(self.q_hidden, self.layer_sizes[-1:] + [self.act_size],
+                                name='Q_primary_adv')
+            self.v = dense_nn(self.q_hidden, self.layer_sizes[-1:] + [1], name='Q_primary_v')
 
             # Average Dueling
             self.q = self.v + (self.adv - tf.reduce_mean(
@@ -149,10 +149,10 @@ class DqnPolicy(Policy, BaseTFModelMixin):
 
             self.q_target_hidden = net_class(self.states_next, self.layer_sizes[:-1], name='Q_target',
                                              **net_params)
-            self.adv_target = mlp_net(self.q_target_hidden, self.layer_sizes[-1:] + [self.act_size],
-                                      name='Q_target_adv')
-            self.v_target = mlp_net(self.q_target_hidden, self.layer_sizes[-1:] + [1],
-                                    name='Q_target_v')
+            self.adv_target = dense_nn(self.q_target_hidden, self.layer_sizes[-1:] + [self.act_size],
+                                       name='Q_target_adv')
+            self.v_target = dense_nn(self.q_target_hidden, self.layer_sizes[-1:] + [1],
+                                     name='Q_target_v')
 
             # Average Dueling
             self.q_target = self.v_target + (self.adv_target - tf.reduce_mean(

@@ -5,7 +5,7 @@ import tensorflow as tf
 
 from playground.policies.base import BaseTFModelMixin, Policy, ReplayMemory
 from playground.utils.misc import plot_learning_curve
-from playground.utils.tf_ops import mlp_net
+from playground.utils.tf_ops import dense_nn
 
 Record = namedtuple('Record', ['s', 'a', 'r', 'td_target'])
 
@@ -66,13 +66,13 @@ class ActorCriticPolicy(Policy, BaseTFModelMixin):
         self.td_targets = tf.placeholder(tf.float32, shape=(None,), name='td_target')
 
         # Actor: action probabilities
-        self.actor = mlp_net(self.states, self.layer_sizes + [self.act_size], name='actor')
+        self.actor = dense_nn(self.states, self.layer_sizes + [self.act_size], name='actor')
         self.sampled_actions = tf.squeeze(tf.multinomial(self.actor, 1))
         self.actor_proba = tf.nn.softmax(self.actor)
         self.actor_vars = self.scope_vars('actor')
 
         # Critic: action value (Q-value)
-        self.critic = mlp_net(self.states, self.layer_sizes + [1], name='critic')
+        self.critic = dense_nn(self.states, self.layer_sizes + [1], name='critic')
         self.critic_vars = self.scope_vars('critic')
 
         action_ohe = tf.one_hot(self.actions, self.act_size, 1.0, 0.0, name='action_one_hot')

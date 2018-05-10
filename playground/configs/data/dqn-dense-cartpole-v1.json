@@ -12,7 +12,7 @@
             32
         ],
         "lr": 0.001,
-        "model_type": "mlp",
+        "model_type": "dense",
         "step_size": 1,
         "target_update_type": "hard"
     },

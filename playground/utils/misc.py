@@ -17,7 +17,7 @@ def plot_learning_curve(filename, value_dict, xlabel='step'):
         ax.plot(range(len(values)), values)
         ax.set_xlabel(xlabel)
         ax.set_ylabel(key)
-        ax.grid('k--', alpha=0.3)
+        ax.grid('k--', alpha=0.6)
 
     plt.tight_layout()
     os.makedirs(os.path.join(REPO_ROOT, 'figs'), exist_ok=True)
@@ -38,12 +38,12 @@ def plot_from_monitor_results(monitor_dir, window=10):
     ax1.plot(range(n_episodes), pd.rolling_mean(np.array(data['episode_lengths']), window))
     ax1.set_xlabel('episode')
     ax1.set_ylabel('episode length')
-    ax1.grid('k--', alpha=0.4)
+    ax1.grid('k--', alpha=0.6)
 
     ax2.plot(range(n_episodes), pd.rolling_mean(np.array(data['episode_rewards']), window))
     ax2.set_xlabel('episode')
     ax2.set_ylabel('episode reward')
-    ax2.grid('k--', alpha=0.4)
+    ax2.grid('k--', alpha=0.6)
 
     os.makedirs(os.path.join(REPO_ROOT, 'figs'), exist_ok=True)
     plt.savefig(os.path.join(REPO_ROOT, 'figs', os.path.basename(monitor_dir) + '-monitor'))
