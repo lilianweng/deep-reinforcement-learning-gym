@@ -65,6 +65,8 @@ Once the training is complete, two figures are generated in `figs/`.
 
 ![results](examples/cartpole-v1-reinforce.png "Rewards in time")
 
+![video](examples/cartpole-v1.mp4 "How it looks like.")
+
 
 
 
