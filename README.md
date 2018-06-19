@@ -36,8 +36,8 @@ If you are interested in playing with Atari games or other advanced packages in 
 
 (4) Clone the code repo and install the requirements.
 ```
-git clone git@github.com:lilianweng/playground-drl.git
-cd playground-drl
+git clone git@github.com:lilianweng/deep-reinforcement-learning-gym.git
+cd deep-reinforcement-learning-gym
 pip install -e .  # install the “playground” project.
 pip install -r requirements.txt  # install required packages.
 ```
@@ -54,7 +54,7 @@ cd playground
 python learn.py configs/data/reinforce-cartpole-v1.json
 ```
 
-During training, three folders will be created in the root `playground-drl/`: `logs`, `checkpoints` and `figs`. Because the env is wrapped by `gym.wrappers.Monitor`, the gym training log is written into `/tmp/` in the meantime. Feel free to comment that out in `playground.configs.manager.ConfigManager` if you are not a fan of that.
+During training, three folders will be created in the root directory: `logs`, `checkpoints` and `figs`. Because the env is wrapped by `gym.wrappers.Monitor`, the gym training log is written into `/tmp/` in the meantime. Feel free to comment that out in `playground.configs.manager.ConfigManager` if you are not a fan of that.
 
 Meanwhile, you can start the tensorboard,
 ```bash
