@@ -18,7 +18,7 @@ class TrainConfig(Config):
     log_every_step = 1000
 
     # give an extra bonus if done; only needed for certain tasks.
-    done_rewards = None
+    done_reward = None
 
 
 class ReplayMemory:
