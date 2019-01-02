@@ -4,17 +4,17 @@ import numpy as np
 import tensorflow as tf
 from gym.spaces import Box, Discrete
 
-from playground.policies.base import BaseTFModelMixin, Policy, ReplayMemory, TrainConfig
+from playground.policies.base import BaseModelMixin, Policy, ReplayMemory, TrainConfig
 from playground.utils.misc import plot_learning_curve
 from playground.utils.tf_ops import dense_nn
 
 
-class DDPGPolicy(Policy, BaseTFModelMixin):
+class DDPGPolicy(Policy, BaseModelMixin):
 
     def __init__(self, env, name, training=True, gamma=0.9,
                  actor_layers=[64, 32], critic_layers=[128, 64],  **kwargs):
         Policy.__init__(self, env, name, training=training, gamma=gamma, **kwargs)
-        BaseTFModelMixin.__init__(self, name)
+        BaseModelMixin.__init__(self, name)
 
         assert isinstance(self.env.action_space, Box), \
             "Current implementation only works for continuous action space."
@@ -53,12 +53,12 @@ class DDPGPolicy(Policy, BaseTFModelMixin):
             self.Q_target = dense_nn(tf.concat([self.s_next, self.mu_target], axis=1),
                                      self.critic_layers + [1], name='Q')
 
-        self.Q_vars = self.get_vars('primary/Q')
-        self.mu_vars = self.get_vars('primary/mu')
+        self.Q_vars = self.scope_vars('primary/Q')
+        self.mu_vars = self.scope_vars('primary/mu')
 
         # sanity check
         self.primary_vars = self.Q_vars + self.mu_vars
-        self.target_vars = self.get_vars('target/Q') + self.get_vars('target/mu')
+        self.target_vars = self.scope_vars('target/Q') + self.scope_vars('target/mu')
         assert len(self.primary_vars) == len(self.target_vars)
 
     def init_target_net(self):

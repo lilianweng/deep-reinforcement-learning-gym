@@ -4,6 +4,7 @@
 __pycache__
 checkpoints/*
 logs/*
+tb/*
 figs/*
 **/*.pyc
 **/*.egg-info

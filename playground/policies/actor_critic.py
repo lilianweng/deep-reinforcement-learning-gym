@@ -4,16 +4,16 @@ import numpy as np
 import tensorflow as tf
 from gym.spaces import Discrete
 
-from playground.policies.base import BaseTFModelMixin, Policy, ReplayMemory, Config
+from playground.policies.base import BaseModelMixin, Policy, ReplayMemory, Config
 from playground.utils.misc import plot_learning_curve
 from playground.utils.tf_ops import dense_nn
 
 
-class ActorCriticPolicy(Policy, BaseTFModelMixin):
+class ActorCriticPolicy(Policy, BaseModelMixin):
 
     def __init__(self, env, name, training=True, gamma=0.9, layer_sizes=None, clip_norm=None, **kwargs):
         Policy.__init__(self, env, name, training=training, gamma=gamma, **kwargs)
-        BaseTFModelMixin.__init__(self, name)
+        BaseModelMixin.__init__(self, name)
 
         assert isinstance(self.env.action_space, Discrete), \
             "Current implementation only works for discrete action space."
@@ -32,7 +32,7 @@ class ActorCriticPolicy(Policy, BaseTFModelMixin):
 
     def _build_networks(self):
         # Define input placeholders
-        self.s = tf.placeholder(tf.float32, shape=(None, self.state_dim), name='state')
+        self.s = tf.placeholder(tf.float32, shape=[None] + self.state_dim, name='state')
         self.a = tf.placeholder(tf.int32, shape=(None,), name='action')
         self.r = tf.placeholder(tf.float32, shape=(None,), name='reward')
         self.td_target = tf.placeholder(tf.float32, shape=(None,), name='td_target')
@@ -62,8 +62,7 @@ class ActorCriticPolicy(Policy, BaseTFModelMixin):
             self.optim_c = tf.train.AdamOptimizer(self.learning_rate_c)
             self.grads_c = self.optim_c.compute_gradients(self.loss_c, self.critic_vars)
             if self.clip_norm:
-                self.grads_c = [(tf.clip_by_norm(grad, self.clip_norm), var)
-                                for grad, var in self.grads_c]
+                self.grads_c = [(tf.clip_by_norm(grad, self.clip_norm), var) for grad, var in self.grads_c]
 
             self.train_op_c = self.optim_c.apply_gradients(self.grads_c)
 
@@ -77,8 +76,7 @@ class ActorCriticPolicy(Policy, BaseTFModelMixin):
             self.optim_a = tf.train.AdamOptimizer(self.learning_rate_a)
             self.grads_a = self.optim_a.compute_gradients(self.loss_a, self.actor_vars)
             if self.clip_norm:
-                self.grads_a = [(tf.clip_by_norm(grad, self.clip_norm), var)
-                                for grad, var in self.grads_a]
+                self.grads_a = [(tf.clip_by_norm(grad, self.clip_norm), var) for grad, var in self.grads_a]
 
             self.train_op_a = self.optim_a.apply_gradients(self.grads_a)
 
@@ -117,7 +115,7 @@ class ActorCriticPolicy(Policy, BaseTFModelMixin):
         epsilon = 1.0
         epsilon_final = 0.05
 
-    def train(self, n_episodes, config: TrainConfig):
+    def train(self, config: TrainConfig):
         BufferRecord = namedtuple('Record', ['s', 'a', 'r', 'td_target'])
         buffer = ReplayMemory(tuple_class=BufferRecord)
 
@@ -130,11 +128,11 @@ class ActorCriticPolicy(Policy, BaseTFModelMixin):
         lr_a = config.lr_a
 
         eps = config.epsilon
-        annealing_episodes = config.annealing_episodes or n_episodes
+        annealing_episodes = config.annealing_episodes or config.n_episodes
         eps_drop = (eps - config.epsilon_final) / annealing_episodes
-        print("eps_drop:", eps_drop)
+        print("Decrease epsilon per step:", eps_drop)
 
-        for n_episode in range(n_episodes):
+        for n_episode in range(config.n_episodes):
             ob = self.env.reset()
             self.act(ob, eps)
             done = False
@@ -189,9 +187,9 @@ class ActorCriticPolicy(Policy, BaseTFModelMixin):
                         np.mean(reward_history[-10:]), reward_history[-5:],
                         lr_c, lr_a, eps,
                     ))
-                # self.save_model(step=step)
+                # self.save_checkpoint(step=step)
 
-        self.save_model(step=step)
+        self.save_checkpoint(step=step)
 
         print("[FINAL] episodes: {}, Max reward: {}, Average reward: {}".format(
             len(reward_history), np.max(reward_history), np.mean(reward_history)))

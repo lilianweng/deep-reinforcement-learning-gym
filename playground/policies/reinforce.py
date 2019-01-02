@@ -1,16 +1,16 @@
 import numpy as np
 import tensorflow as tf
-from playground.policies.base import BaseTFModelMixin, Policy
+from playground.policies.base import BaseModelMixin, Policy
 from playground.utils.misc import plot_learning_curve
 from playground.utils.tf_ops import dense_nn
 
 
-class ReinforcePolicy(Policy, BaseTFModelMixin):
+class ReinforcePolicy(Policy, BaseModelMixin):
     def __init__(self, env, name, training=True, gamma=0.99,
                  lr=0.001, lr_decay=0.999, batch_size=32, layer_sizes=None,
                  baseline=False):
         Policy.__init__(self, env, name, training=training, gamma=gamma)
-        BaseTFModelMixin.__init__(self, name)
+        BaseModelMixin.__init__(self, name)
 
         self.lr = lr
         self.lr_decay = lr_decay

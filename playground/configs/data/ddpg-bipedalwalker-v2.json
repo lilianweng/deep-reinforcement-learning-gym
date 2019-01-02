@@ -8,9 +8,9 @@
     "deterministic": true
   },
   "train_params": {
-    "n_steps": 50000,
+    "n_steps": 40000,
     "warmup_steps": 10000,
-    "batch_size": 64,
+    "batch_size": 128,
     "lr_a": 0.005,
     "lr_c": 0.005,
     "epsilon": 0.35,

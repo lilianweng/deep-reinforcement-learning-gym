@@ -3,7 +3,7 @@ import tensorflow as tf
 from gym.spaces import Box, Discrete
 
 from playground.policies.base import (
-    BaseTFModelMixin,
+    BaseModelMixin,
     Policy,
     ReplayMemory,
     ReplayTrajMemory,
@@ -13,7 +13,7 @@ from playground.utils.misc import plot_learning_curve
 from playground.utils.tf_ops import dense_nn, conv2d_net, lstm_net
 
 
-class DqnPolicy(Policy, BaseTFModelMixin):
+class DqnPolicy(Policy, BaseModelMixin):
     def __init__(self, env, name,
                  training=True,
                  gamma=0.99,
@@ -35,7 +35,7 @@ class DqnPolicy(Policy, BaseTFModelMixin):
         model_params: 'layer_sizes', 'step_size', 'lstm_layers', 'lstm_size'
         """
         Policy.__init__(self, env, name, gamma=gamma, training=training)
-        BaseTFModelMixin.__init__(self, name, saver_max_to_keep=5)
+        BaseModelMixin.__init__(self, name, saver_max_to_keep=5)
 
         assert isinstance(self.env.action_space, Discrete)
         assert isinstance(self.env.observation_space, Box)

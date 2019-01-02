@@ -132,13 +132,6 @@ class Policy:
     def obs_to_inputs(self, ob):
         return ob.flatten()
 
-    def get_vars(self, scope, only_trainable=True):
-        collection = tf.GraphKeys.TRAINABLE_VARIABLES if only_trainable else tf.GraphKeys.VARIABLES
-        variables = tf.get_collection(collection, scope=scope)
-        print(scope, variables)
-        assert len(variables) > 0
-        return variables
-
     def act(self, state, **kwargs):
         pass
 
@@ -168,55 +161,80 @@ class Policy:
         print("Avg. reward over {} episodes: {:.4f}".format(n_episodes, np.mean(reward_history)))
 
 
-class BaseTFModelMixin:
-    """Abstract object representing an Reader model.
-
-    Code borrowed from: https://github.com/devsisters/DQN-tensorflow/blob/master/dqn/base.py
-    with some modifications.
+class BaseModelMixin:
+    """Abstract object representing an tensorflow model that can be easily saved/loaded.
+    Modified based on https://github.com/devsisters/DQN-tensorflow/blob/master/dqn/base.py
     """
 
-    def __init__(self, model_name, saver_max_to_keep=5):
+    def __init__(self, model_name, tf_sess_config=None):
         self._saver = None
-        self._saver_max_to_keep = saver_max_to_keep
         self._writer = None
         self._model_name = model_name
         self._sess = None
 
-    def scope_vars(self, scope):
-        res = tf.get_collection(tf.GraphKeys.GLOBAL_VARIABLES, scope=scope)
-        assert len(res) > 0
-        print("Variables in scope '%s'" % scope)
-        for v in res:
-            print("\t" + str(v))
-        return res
+        if tf_sess_config is None:
+            tf_sess_config = {
+                'allow_soft_placement': True,
+                'intra_op_parallelism_threads': 8,
+                'inter_op_parallelism_threads': 4,
+            }
+        self.tf_sess_config = tf_sess_config
 
-    def save_model(self, step=None):
+    def scope_vars(self, scope, only_trainable=True):
+        collection = tf.GraphKeys.TRAINABLE_VARIABLES if only_trainable else tf.GraphKeys.VARIABLES
+        variables = tf.get_collection(collection, scope=scope)
+        assert len(variables) > 0
+        print(f"Variables in scope '{scope}':")
+        for v in variables:
+            print("\t" + str(v))
+        return variables
+
+    def get_variable_values(self):
+        t_vars = tf.trainable_variables()
+        vals = self.sess.run(t_vars)
+        return {v.name: value for v, value in zip(t_vars, vals)}
+
+    def save_checkpoint(self, step=None):
         print(colorize(" [*] Saving checkpoints...", "green"))
         ckpt_file = os.path.join(self.checkpoint_dir, self.model_name)
         self.saver.save(self.sess, ckpt_file, global_step=step)
 
-    def load_model(self):
+    def load_checkpoint(self):
         print(colorize(" [*] Loading checkpoints...", "green"))
+        ckpt_path = tf.train.latest_checkpoint(self.checkpoint_dir)
+        print(self.checkpoint_dir)
+        print("ckpt_path:", ckpt_path)
 
-        ckpt = tf.train.get_checkpoint_state(self.checkpoint_dir)
-        print(self.checkpoint_dir, ckpt)
-        if ckpt and ckpt.model_checkpoint_path:
-            ckpt_name = os.path.basename(ckpt.model_checkpoint_path)
-            print(ckpt_name)
-            fname = os.path.join(self.checkpoint_dir, ckpt_name)
-            print(fname)
-            self.saver.restore(self.sess, fname)
-            print(colorize(" [*] Load SUCCESS: %s" % fname, "green"))
+        if ckpt_path:
+            # self._saver = tf.train.import_meta_graph(ckpt_path + '.meta')
+            self.saver.restore(self.sess, ckpt_path)
+            print(colorize(" [*] Load SUCCESS: %s" % ckpt_path, "green"))
             return True
         else:
             print(colorize(" [!] Load FAILED: %s" % self.checkpoint_dir, "red"))
             return False
 
+    def _get_dir(self, dir_name):
+        path = os.path.join(REPO_ROOT, dir_name, self.model_name)
+        os.makedirs(path, exist_ok=True)
+        return path
+
+    @property
+    def log_dir(self):
+        return self._get_dir('logs')
+
     @property
     def checkpoint_dir(self):
-        ckpt_path = os.path.join(REPO_ROOT, 'checkpoints', self.model_name)
-        os.makedirs(ckpt_path, exist_ok=True)
-        return ckpt_path
+        return self._get_dir('checkpoints')
+
+    @property
+    def model_dir(self):
+        return self._get_dir('models')
+
+    @property
+    def tb_dir(self):
+        # tensorboard
+        return self._get_dir('tb')
 
     @property
     def model_name(self):
@@ -226,24 +244,19 @@ class BaseTFModelMixin:
     @property
     def saver(self):
         if self._saver is None:
-            self._saver = tf.train.Saver(max_to_keep=self._saver_max_to_keep)
+            self._saver = tf.train.Saver(max_to_keep=5)
         return self._saver
 
     @property
     def writer(self):
         if self._writer is None:
-            writer_path = os.path.join(REPO_ROOT, "logs", self.model_name)
-            os.makedirs(writer_path, exist_ok=True)
-            self._writer = tf.summary.FileWriter(writer_path, self.sess.graph)
+            self._writer = tf.summary.FileWriter(self.tb_dir, self.sess.graph)
         return self._writer
 
     @property
     def sess(self):
         if self._sess is None:
-            config = tf.ConfigProto()
-
-            config.intra_op_parallelism_threads = 2
-            config.inter_op_parallelism_threads = 2
+            config = tf.ConfigProto(**self.tf_sess_config)
             self._sess = tf.Session(config=config)
 
         return self._sess
