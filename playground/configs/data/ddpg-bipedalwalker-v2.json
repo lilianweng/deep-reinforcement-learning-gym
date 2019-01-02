@@ -1,0 +1,20 @@
+{
+  "env_name": "BipedalWalker-v2",
+  "policy_name": "DDPGPolicy",
+  "policy_params": {
+    "gamma": 0.99,
+    "actor_layers": [64, 32],
+    "critic_layers": [128, 64],
+    "deterministic": true
+  },
+  "train_params": {
+    "n_steps": 50000,
+    "warmup_steps": 10000,
+    "batch_size": 64,
+    "lr_a": 0.005,
+    "lr_c": 0.005,
+    "epsilon": 0.35,
+    "epsilon_final": 0.0,
+    "tau": 0.001
+  }
+}

@@ -3,32 +3,36 @@ import numpy as np
 from gym.utils import colorize
 
 
-def dense_nn(inputs, layers_sizes, name="mlp", reuse=None, dropout_keep_prob=None,
+def dense_nn(inputs, layers_sizes, name="mlp", reuse=False, output_fn=None, dropout_keep_prob=None,
              batch_norm=False, training=True):
     print(colorize("Building mlp {} | sizes: {}".format(
         name, [inputs.shape[0]] + layers_sizes), "green"))
 
-    with tf.variable_scope(name):
+    with tf.variable_scope(name, reuse=reuse):
+        out = inputs
         for i, size in enumerate(layers_sizes):
             print("Layer:", name + '_l' + str(i), size)
             if i > 0 and dropout_keep_prob is not None and training:
                 # No dropout on the input layer.
-                inputs = tf.nn.dropout(inputs, dropout_keep_prob)
+                out = tf.nn.dropout(out, dropout_keep_prob)
 
-            inputs = tf.layers.dense(
-                inputs,
+            out = tf.layers.dense(
+                out,
                 size,
                 # Add relu activation only for internal layers.
                 activation=tf.nn.relu if i < len(layers_sizes) - 1 else None,
                 kernel_initializer=tf.contrib.layers.xavier_initializer(),
-                reuse=reuse,
-                name=name + '_l' + str(i)
+                name=name + '_l' + str(i),
+                reuse=reuse
             )
 
             if batch_norm:
-                inputs = tf.layers.batch_normalization(inputs, training=training)
+                out = tf.layers.batch_normalization(out, training=training)
 
-    return inputs
+        if output_fn:
+            out = output_fn(out)
+
+    return out
 
 
 def conv2d_net(inputs, layers_sizes, name="conv2d", conv_layers=2, with_pooling=True,

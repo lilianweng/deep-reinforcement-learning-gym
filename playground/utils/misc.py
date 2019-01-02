@@ -3,9 +3,65 @@ import matplotlib.pyplot as plt
 import numpy as np
 import os
 import pandas as pd
+
 from gym.wrappers.monitor import load_results
+from copy import deepcopy
 
 REPO_ROOT = os.path.abspath(os.path.join(os.path.dirname(__file__), '..', '..'))
+
+
+class Config:
+    def __init__(self, **kwargs):
+        # read parameters from parents, and children can override the values.
+        parents = []
+        queue = [self.__class__]
+        while queue:
+            parent = queue.pop()
+            if issubclass(parent, Config) and parent is not Config:
+                parents.append(parent)
+                for p in reversed(parent.__bases__):
+                    queue.append(p)
+
+        params = {}
+        for cfg in reversed(parents):
+            params.update(cfg.__dict__)
+
+        # Set all instance variable based on kwargs and default class variables
+        for key, value in params.items():
+            if key.startswith('__'):
+                continue
+
+            if key in kwargs:
+                # override default with provided parameter
+                value = kwargs[key]
+            else:
+                # Need to make copies of class variables so that they aren't changed by instances
+                value = deepcopy(value)
+
+            self.__dict__[key] = value
+
+    def __setattr__(self, name, value):
+        if name not in self.__dict__:
+            raise AttributeError(f"{self.__class__.__name__} does not have attribute {name}")
+        self.__dict__[name] = value
+
+    def __getattr__(self, name):
+        # Raise error on assignment of missing variable
+        if name not in self.__dict__:
+            raise AttributeError(f"{self.__class__.__name__} does not have attribute {name}")
+        return self.__dict__[name]
+
+    def as_dict(self):
+        return deepcopy(self.__dict__)
+
+    def copy(self):
+        return self.__class__(**self.as_dict())
+
+    def get(self, name, default):
+        return self.as_dict().get(name, default)
+
+    def __repr__(self):
+        return super().__repr__() + "\n" + self.dumps()
 
 
 def plot_learning_curve(filename, value_dict, xlabel='step'):

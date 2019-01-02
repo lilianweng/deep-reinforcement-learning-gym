@@ -21,22 +21,11 @@ class ReinforcePolicy(Policy, BaseTFModelMixin):
     def act(self, state, **kwargs):
         return self.sess.run(self.sampled_actions, {self.states: [state]})
 
-    @property
-    def act_size(self):
-        return self.env.action_space.n
-
-    @property
-    def obs_size(self):
-        return self.env.observation_space.sample().flatten().shape[0]
-
-    def obs_to_inputs(self, ob):
-        return ob.flatten()
-
     def build(self):
         self.learning_rate = tf.placeholder(tf.float32, shape=None, name='learning_rate')
 
         # Inputs
-        self.states = tf.placeholder(tf.float32, shape=(None, self.obs_size), name='state')
+        self.states = tf.placeholder(tf.float32, shape=(None, self.state_dim), name='state')
         self.actions = tf.placeholder(tf.int32, shape=(None,), name='action')
         self.returns = tf.placeholder(tf.float32, shape=(None,), name='return')
 

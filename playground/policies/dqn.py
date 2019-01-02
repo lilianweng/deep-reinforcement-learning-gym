@@ -69,12 +69,7 @@ class DqnPolicy(Policy, BaseTFModelMixin):
         self.batch_size = batch_size
 
     @property
-    def act_size(self):
-        # Returns: An int
-        return self.env.action_space.n
-
-    @property
-    def obs_size(self):
+    def state_dim(self):
         # Returns: A list
         if self.model_type == 'dense':
             return [np.prod(list(self.env.observation_space.shape))]
@@ -124,8 +119,8 @@ class DqnPolicy(Policy, BaseTFModelMixin):
 
     def create_q_networks(self):
         # The first dimension should have batch_size * step_size
-        self.states = tf.placeholder(tf.float32, shape=(None, *self.obs_size), name='state')
-        self.states_next = tf.placeholder(tf.float32, shape=(None, *self.obs_size),
+        self.states = tf.placeholder(tf.float32, shape=(None, *self.state_dim), name='state')
+        self.states_next = tf.placeholder(tf.float32, shape=(None, *self.state_dim),
                                           name='state_next')
         self.actions = tf.placeholder(tf.int32, shape=(None,), name='action')
         self.actions_next = tf.placeholder(tf.int32, shape=(None,), name='action_next')

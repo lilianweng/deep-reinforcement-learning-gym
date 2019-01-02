@@ -70,7 +70,8 @@ class ConfigManager:
         print("==================================================\n")
 
         policy.build()
-        policy.train(**self.train_params)
+        train_config = policy.TrainConfig(**self.train_params)
+        policy.train(train_config)
 
         env.close()
         plot_from_monitor_results('/tmp/' + model_name, window=50)
