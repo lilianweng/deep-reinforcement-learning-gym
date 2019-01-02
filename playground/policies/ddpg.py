@@ -133,7 +133,6 @@ class DDPGPolicy(Policy, BaseModelMixin):
         episode_step = 0
         reward_history = []
         reward_averaged = []
-        episode_length = []
 
         eps = config.epsilon
         eps_drop_per_step = (eps - config.epsilon_final) / config.warmup_steps
@@ -147,8 +146,6 @@ class DDPGPolicy(Policy, BaseModelMixin):
             while not done:
                 a = self.act(ob, eps)
                 ob_next, r, done, _ = env.step(a)
-                if done and config.done_rewards:
-                    r += config.done_rewards
                 step += 1
                 episode_step += 1
                 episode_reward += r
@@ -161,10 +158,9 @@ class DDPGPolicy(Policy, BaseModelMixin):
 
                 if reward_history and config.log_every_step and step % config.log_every_step == 0:
                     # Report the performance every `log_every_step` steps
-                    print("[episodes:{}/step:{}], best(reward):{:.2f}, avg(reward):{:.2f}, avg(episode length):{:.2f}, "
-                          "eps:{:.4f}".format(n_episode, step, np.max(reward_history), np.mean(reward_history[-10:]),
-                                              np.mean(episode_length[-10:]), eps))
-                    # self.save_model(step=step)
+                    print("[episodes:{}/step:{}], best(reward):{:.2f}, avg(reward):{:.2f}, eps:{:.4f}".format(
+                        n_episode, step, np.max(reward_history), np.mean(reward_history[-10:]), eps))
+                    # self.save_checkpoint(step=step)
 
                 if buffer.size >= config.batch_size:
                     batch = buffer.pop(config.batch_size)
@@ -186,13 +182,12 @@ class DDPGPolicy(Policy, BaseModelMixin):
             n_episode += 1
             ob = env.reset()
             done = False
-            episode_length.append(episode_step)
             reward_history.append(episode_reward)
             reward_averaged.append(np.mean(reward_history[-10:]))
             episode_step = 0
             episode_reward = 0.
 
-        self.save_model(step=step)
+        self.save_checkpoint(step=step)
 
         print("[FINAL] episodes: {}, Max reward: {}, Average reward: {}".format(
             len(reward_history), np.max(reward_history), np.mean(reward_history)))
@@ -200,6 +195,5 @@ class DDPGPolicy(Policy, BaseModelMixin):
         data_dict = {
             'reward': reward_history,
             'reward_smooth10': reward_averaged,
-            'episode_length': episode_length,
         }
         plot_learning_curve(self.model_name, data_dict, xlabel='episode')
