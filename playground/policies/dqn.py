@@ -7,6 +7,7 @@ from playground.policies.base import (
     Policy,
     ReplayMemory,
     ReplayTrajMemory,
+    TrainConfig,
     Transition,
 )
 from playground.utils.misc import plot_learning_curve
@@ -17,56 +18,33 @@ class DqnPolicy(Policy, BaseModelMixin):
     def __init__(self, env, name,
                  training=True,
                  gamma=0.99,
-                 lr=0.001,
-                 lr_decay=1.0,
-                 epsilon=1.0,
-                 epsilon_final=0.01,
-                 batch_size=64,
-                 memory_capacity=100000,
+                 batch_size=32,
                  model_type='dense',
                  model_params=None,
                  step_size=1,  # only > 1 if model_type is 'lstm'.
-                 layer_sizes=None,  # [64] by default.
-                 target_update_type='hard',
-                 target_update_params=None,
+                 layer_sizes=[32, 32],
                  double_q=True,
                  dueling=True):
         """
         model_params: 'layer_sizes', 'step_size', 'lstm_layers', 'lstm_size'
         """
         Policy.__init__(self, env, name, gamma=gamma, training=training)
-        BaseModelMixin.__init__(self, name, saver_max_to_keep=5)
+        BaseModelMixin.__init__(self, name)
 
         assert isinstance(self.env.action_space, Discrete)
         assert isinstance(self.env.observation_space, Box)
         assert model_type in ('dense', 'conv', 'lstm')
         assert step_size == 1 or model_type == 'lstm'
-        assert target_update_type in ('hard', 'soft')
 
         self.gamma = gamma
-        self.lr = lr
-        self.lr_decay = lr_decay
-        self.epsilon = epsilon
-        self.epsilon_final = epsilon_final
+        self.batch_size = batch_size
         self.training = training
-
         self.model_type = model_type
         self.model_params = model_params or {}
-        self.layer_sizes = layer_sizes or [32, 32]
+        self.layer_sizes = layer_sizes
         self.step_size = step_size
         self.double_q = double_q
         self.dueling = dueling
-
-        self.target_update_type = target_update_type
-        self.target_update_every_step = (target_update_params or {}).get('every_step', 100)
-        self.target_update_tau = (target_update_params or {}).get('tau', 0.05)
-
-        if self.model_type == 'lstm':
-            self.memory = ReplayTrajMemory(capacity=memory_capacity, step_size=step_size)
-        else:
-            self.memory = ReplayMemory(capacity=memory_capacity)
-
-        self.batch_size = batch_size
 
     @property
     def state_dim(self):
@@ -88,15 +66,8 @@ class DqnPolicy(Policy, BaseModelMixin):
         else:
             assert NotImplementedError()
 
-    def _init_target_q_net(self):
+    def init_target_q_net(self):
         self.sess.run([v_t.assign(v) for v_t, v in zip(self.q_target_vars, self.q_vars)])
-
-    def _update_target_q_net_hard(self):
-        self.sess.run([v_t.assign(v) for v_t, v in zip(self.q_target_vars, self.q_vars)])
-
-    def _update_target_q_net_soft(self, tau=0.05):
-        self.sess.run([v_t.assign(v_t * (1. - tau) + v * tau)
-                       for v_t, v in zip(self.q_target_vars, self.q_vars)])
 
     def _extract_network_params(self):
         net_params = {}
@@ -202,14 +173,10 @@ class DqnPolicy(Policy, BaseModelMixin):
             self.merged_summary = tf.summary.merge_all(key=tf.GraphKeys.SUMMARIES)
 
         self.sess.run(tf.global_variables_initializer())
-        self._init_target_q_net()
+        self.init_target_q_net()
 
-    def update_target_q_net(self, step):
-        if self.target_update_type == 'hard':
-            if step % self.target_update_every_step == 0:
-                self._update_target_q_net_hard()
-        else:
-            self._update_target_q_net_soft(self.target_update_tau)
+    def update_target_q_net(self):
+        self.sess.run([v_t.assign(v) for v_t, v in zip(self.q_target_vars, self.q_vars)])
 
     def act(self, state, epsilon=0.1):
         if self.training and np.random.random() < epsilon:
@@ -223,19 +190,38 @@ class DqnPolicy(Policy, BaseModelMixin):
             else:
                 return self.actions_selected_by_q.eval({self.states: [state]})[-1]
 
-    def train(self, n_episodes=100, annealing_episodes=None, every_episode=None):
+    ##########
+
+    class TrainConfig(TrainConfig):
+        lr = 0.001
+        lr_decay = 1.0
+        epsilon = 1.0
+        epsilon_final = 0.01
+        memory_capacity = 100000
+        target_update_every_step = 100
+        n_episodes = 500
+        warmup_episodes = 450
+        log_every_episode = 10
+
+    def train(self, config: TrainConfig):
+
+        if self.model_type == 'lstm':
+            buffer = ReplayTrajMemory(capacity=config.memory_capacity, step_size=self.step_size)
+        else:
+            buffer = ReplayMemory(capacity=config.memory_capacity)
+
         reward = 0.
         reward_history = [0.0]
         reward_averaged = []
 
-        lr = self.lr
-        eps = self.epsilon
-        annealing_episodes = annealing_episodes or n_episodes
-        eps_drop = (self.epsilon - self.epsilon_final) / annealing_episodes
+        lr = config.lr
+        eps = config.epsilon
+        annealing_episodes = config.warmup_episodes or config.n_episodes
+        eps_drop = (config.epsilon - config.epsilon_final) / annealing_episodes
         print("eps_drop:", eps_drop)
         step = 0
 
-        for n_episode in range(n_episodes):
+        for n_episode in range(config.n_episodes):
             ob = self.env.reset()
             done = False
             traj = []
@@ -251,11 +237,11 @@ class DqnPolicy(Policy, BaseModelMixin):
                 ob = new_ob
 
                 # No enough samples in the buffer yet.
-                if self.memory.size < self.batch_size:
+                if buffer.size < self.batch_size:
                     continue
 
                 # Training with a mini batch of samples!
-                batch_data = self.memory.sample(self.batch_size)
+                batch_data = buffer.sample(self.batch_size)
                 feed_dict = {
                     self.learning_rate: lr,
                     self.states: batch_data['s'],
@@ -277,10 +263,11 @@ class DqnPolicy(Policy, BaseModelMixin):
                     feed_dict
                 )
                 self.writer.add_summary(summ_str, step)
-                self.update_target_q_net(step)
+                if step % config.target_update_every_step:
+                    self.update_target_q_net()
 
             # Add all the transitions of one trajectory into the replay memory.
-            self.memory.add(traj)
+            buffer.add(traj)
 
             # One episode is complete.
             reward_history.append(reward)
@@ -288,21 +275,21 @@ class DqnPolicy(Policy, BaseModelMixin):
             reward = 0.
 
             # Annealing the learning and exploration rate after every episode.
-            lr *= self.lr_decay
-            if eps > self.epsilon_final:
-                eps -= eps_drop
+            lr *= config.lr_decay
+            if eps > config.epsilon_final:
+                eps = max(eps - eps_drop, config.epsilon_final)
 
-            if reward_history and every_episode and n_episode % every_episode == 0:
+            if reward_history and config.log_every_episode and n_episode % config.log_every_episode == 0:
                 # Report the performance every `every_step` steps
                 print(
                     "[episodes:{}/step:{}], best:{}, avg:{:.2f}:{}, lr:{:.4f}, eps:{:.4f}".format(
                         n_episode, step, np.max(reward_history),
                         np.mean(reward_history[-10:]), reward_history[-5:],
-                        lr, eps, self.memory.size
+                        lr, eps, buffer.size
                     ))
-                # self.save_model(step=step)
+                # self.save_checkpoint(step=step)
 
-        self.save_model(step=step)
+        self.save_checkpoint(step=step)
 
         print("[FINAL] episodes: {}, Max reward: {}, Average reward: {}".format(
             len(reward_history), np.max(reward_history), np.mean(reward_history)))

@@ -1,10 +1,8 @@
-from collections import namedtuple
-
 import numpy as np
 import tensorflow as tf
-from gym.spaces import Box, Discrete
+from gym.spaces import Box
 
-from playground.policies.base import BaseModelMixin, Policy, ReplayMemory, TrainConfig
+from playground.policies.base import BaseModelMixin, Policy, ReplayMemory, TrainConfig, Transition
 from playground.utils.misc import plot_learning_curve
 from playground.utils.tf_ops import dense_nn
 
@@ -126,8 +124,7 @@ class DDPGPolicy(Policy, BaseModelMixin):
 
     def train(self, config: TrainConfig):
         # Construct the replay memory buffer.
-        BufferRecord = namedtuple('Record', ['s', 'a', 'r', 's_next', 'done'])
-        buffer = ReplayMemory(tuple_class=BufferRecord)
+        buffer = ReplayMemory(tuple_class=Transition)
 
         step = 0
         n_episode = 0
@@ -156,7 +153,7 @@ class DDPGPolicy(Policy, BaseModelMixin):
                 episode_step += 1
                 episode_reward += r
 
-                buffer.add(BufferRecord(ob, a, r, ob_next, float(done)))
+                buffer.add(Transition(ob, a, r, ob_next, float(done)))
                 ob = ob_next
 
                 if eps > config.epsilon_final:
