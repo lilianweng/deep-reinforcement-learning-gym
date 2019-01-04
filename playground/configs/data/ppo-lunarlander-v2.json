@@ -1,0 +1,23 @@
+{
+    "env_name": "LunarLander-v2",
+    "policy_name": "PPOPolicy",
+    "policy_params": {
+        "gamma": 0.99,
+        "lam": 0.95,
+        "actor_layers": [64, 64],
+        "critic_layers": [128, 64],
+        "clip_norm": 0.5,
+        "deterministic": true
+    },
+    "train_params": {
+        "lr_a": 0.002,
+        "lr_c": 0.005,
+        "batch_size": 128,
+        "ratio_clip_range": 0.2,
+        "ratio_clip_decay": false,
+        "n_iterations": 100,
+        "n_rollout_workers": 5,
+        "train_epoches": 4,
+        "log_every_iteration": 5
+    }
+}

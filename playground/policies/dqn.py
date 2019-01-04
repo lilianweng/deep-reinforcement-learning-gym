@@ -2,14 +2,8 @@ import numpy as np
 import tensorflow as tf
 from gym.spaces import Box, Discrete
 
-from playground.policies.base import (
-    BaseModelMixin,
-    Policy,
-    ReplayMemory,
-    ReplayTrajMemory,
-    TrainConfig,
-    Transition,
-)
+from playground.policies.base import BaseModelMixin, Policy, TrainConfig
+from playground.policies.memory import ReplayMemory, ReplayTrajMemory, Transition
 from playground.utils.misc import plot_learning_curve
 from playground.utils.tf_ops import dense_nn, conv2d_net, lstm_net
 

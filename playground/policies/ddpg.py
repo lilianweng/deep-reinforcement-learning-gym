@@ -2,7 +2,8 @@ import numpy as np
 import tensorflow as tf
 from gym.spaces import Box
 
-from playground.policies.base import BaseModelMixin, Policy, ReplayMemory, TrainConfig, Transition
+from playground.policies.base import BaseModelMixin, Policy, TrainConfig
+from playground.policies.memory import ReplayMemory, Transition
 from playground.utils.misc import plot_learning_curve
 from playground.utils.tf_ops import dense_nn
 
@@ -15,7 +16,7 @@ class DDPGPolicy(Policy, BaseModelMixin):
         BaseModelMixin.__init__(self, name)
 
         assert isinstance(self.env.action_space, Box), \
-            "Current implementation only works for continuous action space."
+            "Current DDPGPolicy implementation only works for continuous action space."
 
         self.actor_layers = actor_layers
         self.critic_layers = critic_layers
@@ -173,7 +174,7 @@ class DDPGPolicy(Policy, BaseModelMixin):
                             self.a: batch['a'],
                             self.r: batch['r'],
                             self.s_next: batch['s_next'],
-                            self.ep_reward: reward_history[-1] if reward_history else 0.0,
+                            self.ep_reward: np.mean(reward_history[-10:]) if reward_history else 0.0,
                         })
                     self.update_target_net(tau=config.tau)
                     self.writer.add_summary(summ_str, step)

@@ -3,7 +3,8 @@ from collections import defaultdict
 import numpy as np
 from gym.spaces import Discrete
 
-from playground.policies.base import Policy, Transition, TrainConfig
+from playground.policies.base import Policy, TrainConfig
+from playground.policies.memory import Transition
 from playground.utils.misc import plot_learning_curve
 
 

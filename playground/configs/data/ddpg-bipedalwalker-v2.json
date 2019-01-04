@@ -3,14 +3,14 @@
   "policy_name": "DDPGPolicy",
   "policy_params": {
     "gamma": 0.99,
-    "actor_layers": [64, 32],
-    "critic_layers": [128, 64],
+    "actor_layers": [32, 32],
+    "critic_layers": [64, 64],
     "deterministic": true
   },
   "train_params": {
-    "n_steps": 40000,
-    "warmup_steps": 10000,
-    "batch_size": 128,
+    "n_steps": 100000,
+    "warmup_steps": 35000,
+    "batch_size": 64,
     "lr_a": 0.005,
     "lr_c": 0.005,
     "epsilon": 0.35,

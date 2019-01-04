@@ -37,8 +37,7 @@ class ReinforcePolicy(Policy, BaseModelMixin):
 
             with tf.variable_scope('v_optimize'):
                 self.loss_v = tf.reduce_mean(tf.squared_difference(self.v, self.returns))
-                self.optim_v = tf.train.AdamOptimizer(self.lr).minimize(
-                    self.loss_v, name='adam_optim_v')
+                self.optim_v = tf.train.AdamOptimizer(self.lr).minimize(self.loss_v, name='adam_optim_v')
         else:
             self.target = tf.identity(self.returns)
 
@@ -49,8 +48,7 @@ class ReinforcePolicy(Policy, BaseModelMixin):
             # self.optim_pi = tf.train.AdamOptimizer(self.lr)
             # self.grads_pi = self.optim_pi.compute_gradients(self.loss_pi, self.pi_vars)
             # self.train_pi_op = self.optim_pi.apply_gradients(self.grads_pi)
-            self.optim_pi = tf.train.AdamOptimizer(self.lr).minimize(
-                self.loss_pi, name='adam_optim_pi')
+            self.optim_pi = tf.train.AdamOptimizer(self.lr).minimize(self.loss_pi, name='adam_optim_pi')
 
         with tf.variable_scope('summary'):
             self.loss_pi_summ = tf.summary.scalar('loss_pi', self.loss_pi)
