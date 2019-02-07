@@ -78,9 +78,10 @@ class Policy:
                 reward += r
                 ob = new_ob
 
+            print("Evaluation {}/{} : reward {:.4f}".format(i+1, n_episodes, reward))
             reward_history.append(reward)
             reward = 0.
-
+            
         print("Avg. reward over {} episodes: {:.4f}".format(n_episodes, np.mean(reward_history)))
 
 
