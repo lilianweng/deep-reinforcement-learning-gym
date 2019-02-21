@@ -9,12 +9,13 @@ from playground.utils.misc import Config
 from playground.utils.misc import REPO_ROOT
 
 
-class TrainConfig(Config):
+class BaseTrainConfig(Config):
     lr = 0.001
     n_steps = 10000
     warmup_steps = 5000
     batch_size = 64
     log_every_step = 1000
+    buffer_capacity = 1e5
 
     # give an extra bonus if done; only needed for certain tasks.
     done_reward = None
@@ -37,7 +38,7 @@ class Policy:
         if isinstance(self.env.action_space, Discrete):
             return self.env.action_space.n
         else:
-            return None
+            raise ValueError("The property 'act_size' only makes sense for discrete actions.")
 
     @property
     def act_dim(self):

@@ -1,6 +1,6 @@
 import numpy as np
 import tensorflow as tf
-from playground.policies.base import BaseModelMixin, Policy, TrainConfig
+from playground.policies.base import BaseModelMixin, Policy, BaseTrainConfig
 from playground.utils.misc import plot_learning_curve
 from playground.utils.tf_ops import dense_nn
 
@@ -70,14 +70,14 @@ class ReinforcePolicy(Policy, BaseModelMixin):
 
         self.sess.run(tf.global_variables_initializer())
 
-    class TrainConfig(TrainConfig):
+    class TrainConfig(BaseTrainConfig):
         lr = 0.001
         lr_decay = 0.999
         batch_size = 32
         n_episodes = 800
         log_every_episode = 10
 
-    def train(self, config: TrainConfig):
+    def train(self, config: BaseTrainConfig):
         step = 0
         episode_reward = 0.
         reward_history = []

@@ -1,10 +1,8 @@
-from collections import namedtuple
-
 import numpy as np
 import tensorflow as tf
 from gym.spaces import Discrete
 
-from playground.policies.base import BaseModelMixin, Config, Policy
+from playground.policies.base import BaseModelMixin, BaseTrainConfig, Policy
 from playground.policies.memory import ReplayMemory, Transition
 from playground.utils.misc import plot_learning_curve
 from playground.utils.tf_ops import dense_nn
@@ -102,7 +100,7 @@ class ActorCriticPolicy(Policy, BaseModelMixin):
         self._build_networks()
         self._build_train_ops()
 
-    class TrainConfig(Config):
+    class TrainConfig(BaseTrainConfig):
         lr_a = 0.02
         lr_a_decay = 0.995
         lr_c = 0.01

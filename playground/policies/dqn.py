@@ -2,7 +2,7 @@ import numpy as np
 import tensorflow as tf
 from gym.spaces import Box, Discrete
 
-from playground.policies.base import BaseModelMixin, Policy, TrainConfig
+from playground.policies.base import BaseModelMixin, Policy, BaseTrainConfig
 from playground.policies.memory import ReplayMemory, ReplayTrajMemory, Transition
 from playground.utils.misc import plot_learning_curve
 from playground.utils.tf_ops import dense_nn, conv2d_net, lstm_net
@@ -186,7 +186,7 @@ class DqnPolicy(Policy, BaseModelMixin):
 
     ##########
 
-    class TrainConfig(TrainConfig):
+    class TrainConfig(BaseTrainConfig):
         lr = 0.001
         lr_decay = 1.0
         epsilon = 1.0
@@ -197,7 +197,7 @@ class DqnPolicy(Policy, BaseModelMixin):
         warmup_episodes = 450
         log_every_episode = 10
 
-    def train(self, config: TrainConfig):
+    def train(self, config: BaseTrainConfig):
 
         if self.model_type == 'lstm':
             buffer = ReplayTrajMemory(capacity=config.memory_capacity, step_size=self.step_size)

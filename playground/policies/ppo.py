@@ -4,7 +4,7 @@ import numpy as np
 import tensorflow as tf
 from gym.spaces import Discrete
 
-from playground.policies.base import BaseModelMixin, Policy, Config
+from playground.policies.base import BaseModelMixin, Policy, BaseTrainConfig
 from playground.policies.memory import ReplayMemory
 from playground.utils.misc import plot_learning_curve
 from playground.utils.tf_ops import dense_nn
@@ -108,7 +108,7 @@ class PPOPolicy(Policy, BaseModelMixin):
         self._build_networks()
         self._build_train_ops()
 
-    class TrainConfig(Config):
+    class TrainConfig(BaseTrainConfig):
         lr_a = 0.005
         lr_c = 0.005
         batch_size = 32

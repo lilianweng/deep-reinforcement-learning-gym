@@ -2,7 +2,7 @@ import numpy as np
 import tensorflow as tf
 from gym.spaces import Box
 
-from playground.policies.base import BaseModelMixin, Policy, TrainConfig
+from playground.policies.base import BaseModelMixin, BaseTrainConfig, Policy
 from playground.policies.memory import ReplayMemory, Transition
 from playground.utils.misc import plot_learning_curve
 from playground.utils.tf_ops import dense_nn
@@ -114,7 +114,7 @@ class DDPGPolicy(Policy, BaseModelMixin):
         self._build_networks()
         self._build_train_ops()
 
-    class TrainConfig(TrainConfig):
+    class BaseTrainConfig(BaseTrainConfig):
         lr_a = 0.0001
         lr_c = 0.001
         # action exploration noise
@@ -123,7 +123,7 @@ class DDPGPolicy(Policy, BaseModelMixin):
         # for target network polyak averaging
         tau = 0.001
 
-    def train(self, config: TrainConfig):
+    def train(self, config: BaseTrainConfig):
         # Construct the replay memory buffer.
         buffer = ReplayMemory(tuple_class=Transition)
 

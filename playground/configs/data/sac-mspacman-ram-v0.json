@@ -1,0 +1,18 @@
+{
+  "env_name": "MsPacman-ram-v0",
+  "policy_name": "SACPolicy",
+  "policy_params": {
+    "gamma": 0.99,
+    "layer_sizes": [64, 64],
+    "deterministic": true
+  },
+  "train_params": {
+    "n_steps": 1e4,
+    "lr": 0.001,
+    "lr_warmup_steps": 200,
+    "lr_decay_steps": 200,
+    "lr_decay": 0.9,
+    "batch_size": 32,
+    "log_interval": 100
+  }
+}

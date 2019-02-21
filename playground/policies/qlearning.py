@@ -3,7 +3,7 @@ from collections import defaultdict
 import numpy as np
 from gym.spaces import Discrete
 
-from playground.policies.base import Policy, TrainConfig
+from playground.policies.base import Policy, BaseTrainConfig
 from playground.policies.memory import Transition
 from playground.utils.misc import plot_learning_curve
 
@@ -58,7 +58,7 @@ class QlearningPolicy(Policy):
             tr.r + self.gamma * max_q_next * (1.0 - tr.done) - self.Q[tr.s, tr.a]
         )
 
-    class TrainConfig(TrainConfig):
+    class TrainConfig(BaseTrainConfig):
         alpha = 0.5
         alpha_decay = 0.998
         epsilon = 1.0
@@ -67,7 +67,7 @@ class QlearningPolicy(Policy):
         warmup_episodes = 800
         log_every_episode = 10
 
-    def train(self, config: TrainConfig):
+    def train(self, config: BaseTrainConfig):
         reward_history = []
         reward_averaged = []
         step = 0
