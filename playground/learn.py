@@ -1,4 +1,5 @@
 import os
+import logging
 import time
 import click
 from playground.configs.manager import ConfigManager
@@ -23,4 +24,6 @@ def run(config_name, model_name=None):
 
 
 if __name__ == '__main__':
+    logging.getLogger('').handlers = []
+    logging.basicConfig(format='[%(asctime)s] %(message)s', level=logging.DEBUG)
     run()

@@ -1,18 +1,14 @@
 {
-  "env_name": "MsPacman-ram-v0",
+  "env_name": "CartPole-v1",
   "policy_name": "SACPolicy",
   "policy_params": {
     "gamma": 0.99,
-    "layer_sizes": [64, 64],
-    "deterministic": true
+    "layer_sizes": [256, 128]
   },
   "train_params": {
-    "n_steps": 1e4,
-    "lr": 0.001,
-    "lr_warmup_steps": 200,
-    "lr_decay_steps": 200,
-    "lr_decay": 0.9,
-    "batch_size": 32,
-    "log_interval": 100
+    "n_steps": 1e6,
+    "lr": 0.0005,
+    "batch_size": 256,
+    "log_interval": 1e3
   }
 }

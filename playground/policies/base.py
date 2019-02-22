@@ -54,7 +54,7 @@ class Policy:
         return list(self.env.observation_space.shape)
 
     def obs_to_inputs(self, ob):
-        return ob.flatten()
+        return ob.flatten().astype(np.float32)
 
     def act(self, state, **kwargs):
         pass
