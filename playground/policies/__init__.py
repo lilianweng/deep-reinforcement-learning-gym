@@ -5,7 +5,7 @@ from playground.policies.ppo import PPOPolicy
 from playground.policies.qlearning import QlearningPolicy
 from playground.policies.reinforce import ReinforcePolicy
 from playground.policies.sac import SACPolicy
-from playground.policies.sac2 import SAC2Policy
+# from playground.policies.sac2 import SAC2Policy
 
 ALL_POLICIES = [
     ActorCriticPolicy,
@@ -15,5 +15,5 @@ ALL_POLICIES = [
     QlearningPolicy,
     ReinforcePolicy,
     SACPolicy,
-    SAC2Policy,
+    # SAC2Policy,
 ]
