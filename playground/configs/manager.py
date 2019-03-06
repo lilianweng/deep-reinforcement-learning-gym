@@ -55,9 +55,12 @@ class ConfigManager:
         with open(file_path, 'w') as fin:
             json.dump(self.to_json(), fin, indent=4, sort_keys=True)
 
-    def start_training(self, model_name):
+    def start_training(self, model_name, run_monitor=True):
         self.env.reset()
-        env = Monitor(self.env, '/tmp/' + model_name, force=True)
+        env = self.env
+        if run_monitor:
+            env = Monitor(env, '/tmp/' + model_name, force=True)
+
         policy = load_policy_class(self.policy_name)(
             env, model_name, training=True, **self.policy_params)
 
@@ -74,5 +77,6 @@ class ConfigManager:
         policy.train(train_config)
 
         env.close()
-        plot_from_monitor_results('/tmp/' + model_name, window=50)
+        if run_monitor:
+            plot_from_monitor_results('/tmp/' + model_name, window=50)
         print("Training completed:", model_name)

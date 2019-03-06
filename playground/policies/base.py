@@ -37,8 +37,8 @@ class Policy:
         # number of options of an action; this only makes sense for discrete actions.
         if isinstance(self.env.action_space, Discrete):
             return self.env.action_space.n
-        else:
-            raise ValueError("The property 'act_size' only makes sense for discrete actions.")
+        elif isinstance(self.env.action_space, Box):
+            return np.prod(list(self.env.action_space.shape))
 
     @property
     def act_dim(self):
@@ -107,6 +107,7 @@ class BaseModelMixin:
     def scope_vars(self, scope, only_trainable=True):
         collection = tf.GraphKeys.TRAINABLE_VARIABLES if only_trainable else tf.GraphKeys.VARIABLES
         variables = tf.get_collection(collection, scope=scope)
+        variables = sorted(variables, key=lambda v: v.name)
         assert len(variables) > 0
         print(f"Variables in scope '{scope}':")
         for v in variables:

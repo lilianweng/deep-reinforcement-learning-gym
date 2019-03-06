@@ -1,6 +1,7 @@
 from collections import deque, namedtuple
 import numpy as np
 import itertools
+import time
 
 # This is the default buffer record nametuple type.
 Transition = namedtuple('Transition', ['s', 'a', 'r', 's_next', 'done'])
@@ -13,6 +14,8 @@ class ReplayMemory:
         self.replace = replace
         self.tuple_class = tuple_class
         self.fields = tuple_class._fields
+
+        np.random.random(int(time.time()))
 
     def add(self, record):
         """Any named tuple item."""
@@ -37,6 +40,9 @@ class ReplayMemory:
         idxs = np.random.choice(range(len(self.buffer)), size=batch_size, replace=self.replace)
         return self._reformat(idxs)
 
+    def shuffle(self):
+        np.random.shuffle(self.buffer)
+
     def pop(self, batch_size):
         # Pop the first `batch_size` Transition items out.
         i = min(self.size, batch_size)
@@ -44,19 +50,23 @@ class ReplayMemory:
         self.buffer = self.buffer[i:]
         return batch
 
-    def loop(self, batch_size, epoch=None):
-        indices = []
-        ep = None
-        for i in itertools.cycle(range(len(self.buffer))):
-            indices.append(i)
-            if i == 0:
-                ep = 0 if ep is None else ep + 1
-            if epoch is not None and ep == epoch:
-                break
+    def loop(self, batch_size, epoch=1, shuffle=True):
+        if shuffle:
+            self.shuffle()
 
-            if len(indices) == batch_size:
-                yield self._reformat(indices)
-                indices = []
+        indices = []
+        for _ in range(epoch):
+            buffer_indices = range(len(self.buffer))
+
+            if shuffle:
+                buffer_indices = list(buffer_indices)
+                np.random.shuffle(buffer_indices)
+
+            for i in buffer_indices:
+                indices.append(i)
+                if len(indices) == batch_size:
+                    yield self._reformat(indices)
+                    indices = []
 
     @property
     def size(self):

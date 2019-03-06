@@ -8,7 +8,8 @@ from playground.configs.manager import ConfigManager
 @click.command()
 @click.argument('config_name')
 @click.option('-m', '--model-name', default=None)
-def run(config_name, model_name=None):
+@click.option('--no-monitor', is_flag=True, default=False)
+def run(config_name, model_name=None, no_monitor=False):
     cfg = ConfigManager.load(config_name)
 
     if model_name is None:
@@ -20,7 +21,7 @@ def run(config_name, model_name=None):
         ])
 
     model_name = model_name.lower()
-    cfg.start_training(model_name)
+    cfg.start_training(model_name, run_monitor=not no_monitor)
 
 
 if __name__ == '__main__':

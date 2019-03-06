@@ -22,6 +22,7 @@ def dense_nn(inputs, layers_sizes, name="mlp", reuse=False, output_fn=None, drop
                 # Add relu activation only for internal layers.
                 activation=tf.nn.relu if i < len(layers_sizes) - 1 else None,
                 kernel_initializer=tf.contrib.layers.xavier_initializer(),
+                # bias_initializer=tf.constant_initializer(0.0),
                 name=name + '_l' + str(i),
                 reuse=reuse
             )
