@@ -1,7 +1,7 @@
 import logging
 import numpy as np
 import tensorflow as tf
-import tensorflow_probability as tfp
+import tensorflow.contrib.distributions as tfd
 
 from gym.spaces import Box
 
@@ -42,7 +42,7 @@ class SACPolicy(Policy, BaseModelMixin):
             logstd = tf.clip_by_value(logstd, -20.0, 2.0)
             std = tf.exp(logstd)
 
-            mvn = tfp.distributions.MultivariateNormalDiag(loc=mean, scale_diag=std)
+            mvn = tfd.MultivariateNormalDiag(loc=mean, scale_diag=std)
             x = mvn.sample()
             logp = mvn.log_prob(x)
             # use tanh so that the action value is in [-1, 1]
