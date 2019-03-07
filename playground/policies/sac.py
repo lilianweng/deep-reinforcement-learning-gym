@@ -4,7 +4,6 @@ WARNING
 WIP; NOT READY!
 """
 
-
 import logging
 import numpy as np
 import tensorflow as tf
@@ -34,28 +33,38 @@ class SACPolicy(Policy, BaseModelMixin):
     def act(self, state, eps=0.0):
         # add random gaussian noise for action exploration.
         action = self.sess.run(self.mu, {self.s: [state]})[0]
-        # action += eps * np.random.randn(*self.act_dim)
-        # action = np.clip(action, self.env.action_space.low, self.env.action_space.high)
+        action += eps * np.random.randn(*self.act_dim)
+        action = np.clip(action, self.env.action_space.low, self.env.action_space.high)
         return action
 
     def _construct_gaussian_policy_network(self, input_state, reuse=False):
         """NOTE: to distinguish from stochastic policy `pi`, I use `mu` as a symbol for
         deterministic policy, `mu` does not refer to mean of a distribution here.
         """
+        EPS = 1e-6
+
         with tf.variable_scope('mu', reuse=reuse):
-            hidden = dense_nn(input_state, self.layer_sizes, name='mu_hidden')
-            mean = dense_nn(hidden, self.act_dim, name='mu_mean')
-            logstd = dense_nn(hidden, self.act_dim, name='mu_logstd')
+            mean = dense_nn(input_state, self.layer_sizes + self.act_dim, name='mu_mean')
+            logstd = dense_nn(input_state, self.layer_sizes + self.act_dim, name='mu_logstd')  # log() - so that it can be any number.
             logstd = tf.clip_by_value(logstd, -20.0, 2.0)
             std = tf.exp(logstd)
 
-            dist = tfp.distributions.Normal(loc=mean, scale=std)
-            x = dist.sample()
-            logp = dist.log_prob(x)
-            # use tanh so that the action value is in [-1, 1]
-            mu = tf.nn.tanh(x)
+            x = mean + tf.random_normal(tf.shape(mean)) * std
+            logp = tf.reduce_sum(
+                -0.5 * (((x - mean) / (tf.exp(logstd) + EPS)) ** 2 + 2 * logstd + np.log(2 * np.pi)),
+                axis=1
+            )
 
-        return mu, logp
+            # dist = tfp.distributions.Normal(loc=mean, scale=std)
+            # x = dist.sample()
+            # logp = dist.log_prob(x)
+
+            # apply squashing function
+            mu = tf.tanh(mean)  # deterministic action
+            pi = tf.tanh(x)  # stochastic action
+            logp -= tf.reduce_sum(tf.log(1 - pi ** 2 + EPS), axis=1)
+
+        return pi, logp
 
     def _build_Q_networks(self, name):
         arch = self.layer_sizes + [1]
@@ -101,9 +110,6 @@ class SACPolicy(Policy, BaseModelMixin):
         else:
             raise ValueError(f"unknown update target network mode: '{mode}'")
 
-    def _build_optimization_op(self, loss, vars, lr):
-        return tf.train.AdamOptimizer(lr).minimize(loss=loss, var_list=vars)
-
     def _build_train_ops(self):
         self.alpha = tf.placeholder(tf.float32, shape=None, name='alpha')
         self.lr = tf.placeholder(tf.float32, shape=None, name='learning_rate')
@@ -114,31 +120,33 @@ class SACPolicy(Policy, BaseModelMixin):
 
             # using reparametrization gradient; TODO why this does not work?
             # loss_mu = tf.reduce_mean(
-            #     - tf.minimum(self.mu_Q1, self.mu_Q2)
-            #     + self.alpha * self.mu_logp
+            #      self.alpha * self.mu_logp - tf.minimum(self.mu_Q1, self.mu_Q2)
             # ) + 0.0001 * reg_mu
 
             # # using REINFORCE gradient; Psi_t = advantage value with an entropy reward
             loss_mu = - tf.reduce_mean(self.mu_logp * tf.stop_gradient(
                 self.mu_Q1 - self.V - self.alpha * self.mu_logp)) + 0.0001 * reg_mu
-            train_mu_op = self._build_optimization_op(loss_mu, self.mu_vars, self.lr)
 
         with tf.variable_scope('training_Q'):
             # Compute the regression target.
             y_q = self.r + self.gamma * self.V_target_next * (1.0 - self.done)
-            loss_Q1 = tf.reduce_mean(tf.square(self.Q1 - tf.stop_gradient(y_q)))
-            loss_Q2 = tf.reduce_mean(tf.square(self.Q2 - tf.stop_gradient(y_q)))
-
-            train_Q1_op = self._build_optimization_op(loss_Q1, self.Q1_vars, self.lr)
-            train_Q2_op = self._build_optimization_op(loss_Q2, self.Q2_vars, self.lr)
+            # loss_Q1 = tf.reduce_mean(tf.square(self.Q1 - tf.stop_gradient(y_q)))
+            # loss_Q2 = tf.reduce_mean(tf.square(self.Q2 - tf.stop_gradient(y_q)))
+            loss_Q1 = tf.losses.huber_loss(tf.stop_gradient(y_q), self.Q1)
+            loss_Q2 = tf.losses.huber_loss(tf.stop_gradient(y_q), self.Q2)
 
         with tf.variable_scope('training_V'):
             y_v = tf.minimum(self.mu_Q1, self.mu_Q2) - self.alpha * self.mu_logp
-            loss_V = tf.reduce_mean(tf.square(self.V - tf.stop_gradient(y_v)))
-            train_V_op = self._build_optimization_op(loss_V, self.V_vars, self.lr)
+            loss_V = tf.losses.mean_squared_error(tf.stop_gradient(y_v), self.V)
+
+        train_mu_op = tf.train.AdamOptimizer(self.lr).minimize(loss_mu)
+        # train_Q1_op = tf.train.AdamOptimizer(self.lr).minimize(loss_Q1)
+        # train_Q2_op = tf.train.AdamOptimizer(self.lr).minimize(loss_Q2)
+        # train_V_op = tf.train.AdamOptimizer(self.lr).minimize(loss_V)
+        train_values_op = tf.train.AdamOptimizer(self.lr).minimize(loss_Q1 + loss_Q2 + loss_V)
 
         self.losses = [loss_Q1, loss_Q2, loss_V, loss_mu]
-        self.train_ops = [train_Q1_op, train_Q2_op, train_V_op, train_mu_op]
+        self.train_ops = [train_values_op, train_mu_op]
 
         with tf.variable_scope('summary'):
             self.ep_reward = tf.placeholder(tf.float32, name='episode_reward')
@@ -178,7 +186,8 @@ class SACPolicy(Policy, BaseModelMixin):
         buffer_capacity = 1e5
         log_interval = 100
         train_steps_per_loop = 1
-        explore_steps = 0
+        epsilon = 0.35
+        epsilon_final = 0.0
 
     def train(self, config: BaseTrainConfig):
         self.buffer = ReplayMemory(capacity=config.buffer_capacity, tuple_class=Transition)
@@ -190,6 +199,10 @@ class SACPolicy(Policy, BaseModelMixin):
         lr = config.lr
         step = 0  # training step.
 
+        eps = config.epsilon
+        eps_drop_per_step = (eps - config.epsilon_final) / config.warmup_steps
+        print("decrease `epsilon` per step:", eps_drop_per_step)
+
         while step < config.n_steps:
 
             rew = 0.
@@ -197,16 +210,15 @@ class SACPolicy(Policy, BaseModelMixin):
             done = False
 
             while not done:
-                if step >= config.explore_steps:
-                    a = self.env.action_space.sample()
-                else:
-                    a = self.act(ob)
-
+                a = self.act(ob, eps)
                 ob_next, r, done, info = self.env.step(a)
                 rew += r
                 record = Transition(self.obs_to_inputs(ob), a, r, self.obs_to_inputs(ob_next), done)
                 self.buffer.add(record)
                 ob = ob_next
+
+                if eps > config.epsilon_final:
+                    eps = max(config.epsilon_final, eps - eps_drop_per_step)
 
                 if self.buffer.size >= config.batch_size and self.reward_history:
                     for _ in range(config.train_steps_per_loop):
@@ -219,7 +231,7 @@ class SACPolicy(Policy, BaseModelMixin):
                             self.s_next: batch['s_next'],
                             self.done: batch['done'],
                             self.alpha: config.alpha,
-                            self.ep_reward: np.mean(self.reward_history[-10:]),
+                            self.ep_reward: self.reward_history[-1],
                         }
 
                         _, summ_str = self.sess.run([self.train_ops, self.merged_summary], feed_dict=feed_dict)
@@ -238,9 +250,8 @@ class SACPolicy(Policy, BaseModelMixin):
 
                             # Report the performance every `every_step` steps
                             logging.info(
-                                f"[episodes:{self.n_episode}/step:{step}], best:{max_rew:.2f}, avg:{avg10_rew:.2f}:"
-                                f"{list(map(lambda x: round(x, 2), self.reward_history[-5:]))}, "
-                                f"buffer:{self.buffer.size}, lr:{lr:.4f}")
+                                f"[episodes:{self.n_episode}/step:{step}], best:{max_rew:.2f}, avg:{avg10_rew:.2f}, "
+                                f"buffer:{self.buffer.size}, lr:{lr:.4f}, exploring: {step < config.explore_steps}")
                             # self.save_checkpoint(step=step)
 
             # One trajectory is complete!

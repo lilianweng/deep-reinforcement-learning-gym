@@ -114,7 +114,7 @@ class DDPGPolicy(Policy, BaseModelMixin):
         self._build_networks()
         self._build_train_ops()
 
-    class BaseTrainConfig(BaseTrainConfig):
+    class TrainConfig(BaseTrainConfig):
         lr_a = 0.0001
         lr_c = 0.001
         # action exploration noise
