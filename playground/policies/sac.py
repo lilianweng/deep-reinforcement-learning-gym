@@ -178,6 +178,7 @@ class SACPolicy(Policy, BaseModelMixin):
         buffer_capacity = 1e5
         log_interval = 100
         train_steps_per_loop = 1
+        explore_steps = 0
 
     def train(self, config: BaseTrainConfig):
         self.buffer = ReplayMemory(capacity=config.buffer_capacity, tuple_class=Transition)
@@ -196,10 +197,10 @@ class SACPolicy(Policy, BaseModelMixin):
             done = False
 
             while not done:
-                if step >= 10000:
-                    a = self.act(ob)
-                else:
+                if step >= config.explore_steps:
                     a = self.env.action_space.sample()
+                else:
+                    a = self.act(ob)
 
                 ob_next, r, done, info = self.env.step(a)
                 rew += r
