@@ -3,8 +3,17 @@
   "policy_name": "SACPolicy",
   "policy_params": {
     "gamma": 0.99,
-    "layer_sizes": [256, 128]
+    "layer_sizes": [256, 256]
   },
   "train_params": {
+    "n_steps": 1e6,
+    "alpha": 0.1,
+    "tau": 0.005,
+    "lr": 0.01,
+    "lr_decay_steps": 5e3,
+    "lr_decay": 0.8,
+    "batch_size": 128,
+    "buffer_capacity": 1e6,
+    "log_interval": 100
   }
 }

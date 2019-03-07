@@ -1,7 +1,14 @@
+"""
+WARNING
+
+WIP; NOT READY!
+"""
+
+
 import logging
 import numpy as np
 import tensorflow as tf
-import tensorflow.contrib.distributions as tfd
+import tensorflow_probability as tfp
 
 from gym.spaces import Box
 
@@ -42,9 +49,9 @@ class SACPolicy(Policy, BaseModelMixin):
             logstd = tf.clip_by_value(logstd, -20.0, 2.0)
             std = tf.exp(logstd)
 
-            mvn = tfd.MultivariateNormalDiag(loc=mean, scale_diag=std)
-            x = mvn.sample()
-            logp = mvn.log_prob(x)
+            dist = tfp.distributions.Normal(loc=mean, scale=std)
+            x = dist.sample()
+            logp = dist.log_prob(x)
             # use tanh so that the action value is in [-1, 1]
             mu = tf.nn.tanh(x)
 
@@ -95,12 +102,7 @@ class SACPolicy(Policy, BaseModelMixin):
             raise ValueError(f"unknown update target network mode: '{mode}'")
 
     def _build_optimization_op(self, loss, vars, lr):
-        optim = tf.train.AdamOptimizer(lr)
-        grads = optim.compute_gradients(loss, vars)
-        if self.clip_norm:
-            grads = [(tf.clip_by_norm(g, self.clip_norm), v) for g, v in grads]
-        train_op = optim.apply_gradients(grads)
-        return train_op, grads
+        return tf.train.AdamOptimizer(lr).minimize(loss=loss, var_list=vars)
 
     def _build_train_ops(self):
         self.alpha = tf.placeholder(tf.float32, shape=None, name='alpha')
@@ -111,15 +113,15 @@ class SACPolicy(Policy, BaseModelMixin):
             reg_mu = tf.reduce_mean([tf.nn.l2_loss(x) for x in self.mu_vars])
 
             # using reparametrization gradient; TODO why this does not work?
-            loss_mu = tf.reduce_mean(
-                - tf.minimum(self.mu_Q1, self.mu_Q2)
-                + self.alpha * self.mu_logp
-            ) + 0.0001 * reg_mu
+            # loss_mu = tf.reduce_mean(
+            #     - tf.minimum(self.mu_Q1, self.mu_Q2)
+            #     + self.alpha * self.mu_logp
+            # ) + 0.0001 * reg_mu
 
             # # using REINFORCE gradient; Psi_t = advantage value with an entropy reward
-            # loss_mu = - tf.reduce_mean(self.mu_logp * tf.stop_gradient(
-            #     self.mu_Q1 - self.V - self.alpha * self.mu_logp)) + 0.0001 * reg_mu
-            train_mu_op, grads_mu = self._build_optimization_op(loss_mu, self.mu_vars, self.lr)
+            loss_mu = - tf.reduce_mean(self.mu_logp * tf.stop_gradient(
+                self.mu_Q1 - self.V - self.alpha * self.mu_logp)) + 0.0001 * reg_mu
+            train_mu_op = self._build_optimization_op(loss_mu, self.mu_vars, self.lr)
 
         with tf.variable_scope('training_Q'):
             # Compute the regression target.
@@ -127,13 +129,13 @@ class SACPolicy(Policy, BaseModelMixin):
             loss_Q1 = tf.reduce_mean(tf.square(self.Q1 - tf.stop_gradient(y_q)))
             loss_Q2 = tf.reduce_mean(tf.square(self.Q2 - tf.stop_gradient(y_q)))
 
-            train_Q1_op, grads_Q1 = self._build_optimization_op(loss_Q1, self.Q1_vars, self.lr)
-            train_Q2_op, grads_Q2 = self._build_optimization_op(loss_Q2, self.Q2_vars, self.lr)
+            train_Q1_op = self._build_optimization_op(loss_Q1, self.Q1_vars, self.lr)
+            train_Q2_op = self._build_optimization_op(loss_Q2, self.Q2_vars, self.lr)
 
         with tf.variable_scope('training_V'):
             y_v = tf.minimum(self.mu_Q1, self.mu_Q2) - self.alpha * self.mu_logp
             loss_V = tf.reduce_mean(tf.square(self.V - tf.stop_gradient(y_v)))
-            train_V_op, grads_V = self._build_optimization_op(loss_V, self.V_vars, self.lr)
+            train_V_op = self._build_optimization_op(loss_V, self.V_vars, self.lr)
 
         self.losses = [loss_Q1, loss_Q2, loss_V, loss_mu]
         self.train_ops = [train_Q1_op, train_Q2_op, train_V_op, train_mu_op]
@@ -156,16 +158,6 @@ class SACPolicy(Policy, BaseModelMixin):
                 tf.summary.scalar('episode_reward', self.ep_reward)
             ]
 
-            def _get_grads_summary(grads, name):
-                return [
-                    tf.summary.scalar(f'grads_{name}/' + v.name.replace(':', '_'), tf.reduce_mean(tf.norm(g)))
-                    for g, v in grads if g is not None
-                ]
-
-            # self.summary += _get_grads_summary(grads_pi, 'pi')
-            # self.summary += _get_grads_summary(grads_Q1, 'Q1')
-            # self.summary += _get_grads_summary(grads_Q2, 'Q2')
-
             self.merged_summary = tf.summary.merge_all(key=tf.GraphKeys.SUMMARIES)
 
         self.sess.run(tf.global_variables_initializer())
@@ -178,10 +170,10 @@ class SACPolicy(Policy, BaseModelMixin):
     class TrainConfig(BaseTrainConfig):
         alpha = 0.1
         tau = 0.01
-        lr = 0.005
+        lr = 0.003
         lr_decay_steps = 1000
         lr_decay = 0.9
-        batch_size = 128
+        batch_size = 64
         n_steps = 1e6
         buffer_capacity = 1e5
         log_interval = 100
@@ -204,7 +196,11 @@ class SACPolicy(Policy, BaseModelMixin):
             done = False
 
             while not done:
-                a = self.act(ob)
+                if step >= 10000:
+                    a = self.act(ob)
+                else:
+                    a = self.env.action_space.sample()
+
                 ob_next, r, done, info = self.env.step(a)
                 rew += r
                 record = Transition(self.obs_to_inputs(ob), a, r, self.obs_to_inputs(ob_next), done)
@@ -242,7 +238,8 @@ class SACPolicy(Policy, BaseModelMixin):
                             # Report the performance every `every_step` steps
                             logging.info(
                                 f"[episodes:{self.n_episode}/step:{step}], best:{max_rew:.2f}, avg:{avg10_rew:.2f}:"
-                                f"{list(map(lambda x: round(x, 2), self.reward_history[-5:]))}, lr:{lr:.4f}")
+                                f"{list(map(lambda x: round(x, 2), self.reward_history[-5:]))}, "
+                                f"buffer:{self.buffer.size}, lr:{lr:.4f}")
                             # self.save_checkpoint(step=step)
 
             # One trajectory is complete!
