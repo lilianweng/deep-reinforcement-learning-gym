@@ -11,7 +11,6 @@ from gym.wrappers import Monitor
 @click.option('-r', '--nb-runs', default=1)
 def run(config_name, model_name, nb_runs=1):
     cfg = ConfigManager.load(config_name)
-    #env = Monitor(cfg.env, '/tmp/' + model_name, force=True)
     policy = load_policy_class(cfg.policy_name)(cfg.env, "", training=False, **cfg.policy_params)
     policy.build()
     path = os.path.join(REPO_ROOT, "checkpoints", model_name)
