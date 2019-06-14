@@ -78,9 +78,10 @@ class Policy:
                 reward += r
                 ob = new_ob
 
+            print("Evaluation {}/{} : reward {:.4f}".format(i+1, n_episodes, reward))
             reward_history.append(reward)
             reward = 0.
-
+            
         print("Avg. reward over {} episodes: {:.4f}".format(n_episodes, np.mean(reward_history)))
 
 
@@ -122,10 +123,13 @@ class BaseModelMixin:
         ckpt_file = os.path.join(self.checkpoint_dir, self.model_name)
         self.saver.save(self.sess, ckpt_file, global_step=step)
 
-    def load_checkpoint(self):
+    def load_checkpoint(self, checkpoint_dir=None):
+        if checkpoint_dir is None:
+            checkpoint_dir = self.checkpoint_dir
+        
         print(colorize(" [*] Loading checkpoints...", "green"))
-        ckpt_path = tf.train.latest_checkpoint(self.checkpoint_dir)
-        print(self.checkpoint_dir)
+        ckpt_path = tf.train.latest_checkpoint(checkpoint_dir)
+        print(checkpoint_dir)
         print("ckpt_path:", ckpt_path)
 
         if ckpt_path:
@@ -134,7 +138,7 @@ class BaseModelMixin:
             print(colorize(" [*] Load SUCCESS: %s" % ckpt_path, "green"))
             return True
         else:
-            print(colorize(" [!] Load FAILED: %s" % self.checkpoint_dir, "red"))
+            print(colorize(" [!] Load FAILED: %s" % checkpoint_dir, "red"))
             return False
 
     def _get_dir(self, dir_name):

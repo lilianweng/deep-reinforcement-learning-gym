@@ -51,7 +51,7 @@ Start a model training as follows,
 
 ```bash
 cd playground
-python learn.py configs/data/reinforce-cartpole-v1.json
+python learn.py configs/data/reinforce-cartpole-v1.json --model-name=training1
 ```
 
 During training, three folders will be created in the root directory: `logs`, `checkpoints` and `figs`. Because the env is wrapped by `gym.wrappers.Monitor`, the gym training log is written into `/tmp/` in the meantime. Feel free to comment that out in `playground.configs.manager.ConfigManager` if you are not a fan of that.
@@ -68,5 +68,11 @@ Once the training is complete, two figures are generated in `figs/`.
 ![video](examples/cartpole.gif "How it looks like.")
 
 
+### Evaluate Models
 
+Once a model has been trained, you can then evaluate it using:
 
+```bash
+cd playground
+python evaluate.py configs/data/reinforce-cartpole-v1.json training1 --nb-runs=10
+```
